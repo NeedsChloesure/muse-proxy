@@ -300,11 +300,13 @@ td {
 	padding: 0.55rem 0.5rem;
 	border-bottom: 1px solid var(--line);
 	vertical-align: middle;
-	/* Long values — DAV paths, resource keys, key prefixes — have no spaces to
-	   break at. Without this a single cell sets the table's minimum width and
-	   the table spills out past its panel. `anywhere` (unlike `break-word`)
-	   shrinks the min-content width, which is what stops the overflow. */
-	overflow-wrap: anywhere;
+	/* Break a too-long word rather than let it spill out of the panel. Unlike
+	   `anywhere`, `break-word` leaves the cell's min-content width alone, so
+	   the table still gives a column the room its words need — `anywhere` here
+	   collapsed every cell to one character and the table crushed names,
+	   pills and buttons into vertical letter stacks. Long unbreakable values
+	   get the aggressive treatment in `.mono` below. */
+	overflow-wrap: break-word;
 }
 
 .nowrap {
@@ -332,6 +334,8 @@ tbody tr:last-child td {
 	font-size: 0.75rem;
 	font-weight: 600;
 	border: 1px solid var(--line);
+	/* A badge is a single token: "act ive" or "Dele te" reads as a bug. */
+	white-space: nowrap;
 }
 
 .pill.ok {
@@ -359,6 +363,12 @@ tbody tr:last-child td {
 .mono {
 	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 	font-size: 0.85rem;
+	/* Long values — DAV paths, resource keys, key prefixes — have no spaces to
+	   break at. Scoped to `.mono`, where those values live: `anywhere` (unlike
+	   `break-word`) shrinks min-content, which is what stops one cell from
+	   forcing the table wider than its panel. Applying it to every cell is what
+	   collapsed short columns and wrapped names and buttons mid-word. */
+	overflow-wrap: anywhere;
 }
 
 .muted {

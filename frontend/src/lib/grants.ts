@@ -15,7 +15,7 @@
  * Without that, setting everything at once would lock the individual rows.
  */
 
-import type { Access, Grant, GrantAccess } from './api';
+import type { Access, Connection, Grant, GrantAccess } from './api';
 
 const RANK: Record<Access, number> = { none: 0, read: 1, write: 2 };
 
@@ -89,4 +89,59 @@ export function setCollectionLevel(
 export function setAllCollections(grants: Grant[], connectionId: string, level: Access): Grant[] {
 	const elsewhere = grants.filter((grant) => grant.connectionId !== connectionId);
 	return level === 'none' ? elsewhere : [...elsewhere, { connectionId, resourceKey: '*', maxAccess: level }];
+}
+
+/** One connection's slice of a key's grants, boiled down for a list view. */
+export interface GrantSummary {
+	connectionId: string;
+	/** Human label for the connection the grants belong to. */
+	label: string;
+	/** Compact pill text, e.g. `Baikal · read` or `Baikal · all · write`. */
+	text: string;
+	/** Every granted collection and level, for the pill's title attribute. */
+	detail: string;
+}
+
+const LEVEL_RANK: Record<GrantAccess, number> = { read: 1, write: 2 };
+
+/**
+ * Roll a key's grants up by connection for the key list.
+ *
+ * The list has one row per key, so printing every grant there produced a wall
+ * of resource keys — and opaque UUIDs, because a DAV path's last segment is a
+ * collection id. Grouping by connection and resolving the display name the
+ * connection already knows keeps the cell scannable; `detail` carries the full
+ * list for the pill's tooltip.
+ */
+export function summarizeGrants(grants: readonly Grant[], connections: readonly Connection[]): GrantSummary[] {
+	const byConnection = new Map<string, Grant[]>();
+	for (const grant of grants) {
+		const existing = byConnection.get(grant.connectionId);
+		if (existing) existing.push(grant);
+		else byConnection.set(grant.connectionId, [grant]);
+	}
+
+	return [...byConnection].map(([connectionId, list]) => {
+		const connection = connections.find((entry) => entry.id === connectionId);
+		const label = connection?.label ?? 'Unknown connection';
+		// A wildcard already covers every collection, so naming the count would
+		// only be noise — and the explicit grants it sits beside are a subset.
+		const wildcard = list.some((grant) => grant.resourceKey === '*');
+		const levels = [...new Set(list.map((grant) => grant.maxAccess))].sort((a, b) => LEVEL_RANK[a] - LEVEL_RANK[b]);
+		const scope = wildcard ? 'all' : list.length > 1 ? `${list.length} collections` : null;
+
+		return {
+			connectionId,
+			label,
+			text: [label, scope, levels.join('/')].filter(Boolean).join(' · '),
+			detail: list.map((grant) => `${collectionName(connection, grant.resourceKey)} · ${grant.maxAccess}`).join('\n'),
+		};
+	});
+}
+
+/** The name a person would recognise, falling back to the path's last segment. */
+function collectionName(connection: Connection | undefined, resourceKey: string): string {
+	if (resourceKey === '*') return 'All collections';
+	const resource = connection?.resources.find((entry) => entry.resourceKey === resourceKey);
+	return resource?.displayName ?? resourceKey.split('/').filter(Boolean).pop() ?? resourceKey;
 }

@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { Alert, Field, ScopeMatrix, TokenReveal, relativeTime, useAsync } from '../components';
 import { api, errorMessage, type Connection, type Grant } from '../lib/api';
+import { summarizeGrants } from '../lib/grants';
 import { usageDisplay } from '../lib/keyActivity';
 
 export function KeysPage() {
@@ -22,6 +23,9 @@ export function KeysPage() {
 	// Usage states are computed once per render: an expired key that was in use
 	// when it died gets a loud "recently active" pill next to its expired one.
 	const usageByKey = new Map(keyList.map((key) => [key.id, usageDisplay(key, Date.now(), relativeTime)]));
+	// Grants are rolled up per connection so a key with a dozen collections
+	// still fits one row; the full list rides along in each pill's tooltip.
+	const grantsByKey = new Map(keyList.map((key) => [key.id, summarizeGrants(key.grants ?? [], connectionList)]));
 
 	async function remove(keyId: string) {
 		if (!window.confirm('Delete this key permanently? Agents using it stop working immediately, and its grants and unread notices go with it.')) return;
@@ -100,34 +104,34 @@ export function KeysPage() {
 						<tbody>
 							{keyList.map((key) => {
 								const usage = usageByKey.get(key.id);
+								const grants = grantsByKey.get(key.id) ?? [];
 								return (
 									<tr key={key.id}>
-									<td>
-										<Link to={`/keys/${key.id}`}>{key.name}</Link>
-									</td>
-									<td className="mono muted">{key.prefix}…</td>
-									<td>
-									{key.active ? (
-										<span className="pill ok">active</span>
-									) : (
-										<span className="pill bad">expired</span>
-									)}
-									{usage?.pill ? <span className={`pill ${usage.pill.tone}`}>{usage.pill.text}</span> : null}
-									</td>
-									<td className="muted">{usage?.used ?? (key.lastUsedAt ? relativeTime(key.lastUsedAt) : 'never')}</td>
-									<td className="muted">									{(key.grants ?? []).length === 0
-										? 'none'
-										: (key.grants ?? []).map((grant) => (
-												<span key={`${grant.connectionId}-${grant.resourceKey}`} className="pill muted">
-													{grant.resourceKey === '*' ? 'all' : grant.resourceKey.split('/').pop()} · {grant.maxAccess}
-												</span>
-											))}
-									</td>
-									<td>
-										<button className="danger" disabled={busy} onClick={() => void remove(key.id)}>
-											Delete
-										</button>
-									</td>
+										<td>
+											<Link to={`/keys/${key.id}`}>{key.name}</Link>
+										</td>
+										<td className="mono muted nowrap">{key.prefix}…</td>
+										<td>
+											{key.active ? <span className="pill ok">active</span> : <span className="pill bad">expired</span>}
+											{usage?.pill ? <span className={`pill ${usage.pill.tone}`}>{usage.pill.text}</span> : null}
+										</td>
+										<td className="muted">{usage?.used ?? (key.lastUsedAt ? relativeTime(key.lastUsedAt) : 'never')}</td>
+										<td>
+											{grants.length === 0 ? (
+												<span className="muted">none</span>
+											) : (
+												grants.map((summary) => (
+													<span key={summary.connectionId} className="pill muted" title={summary.detail}>
+														{summary.text}
+													</span>
+												))
+											)}
+										</td>
+										<td className="nowrap" style={{ textAlign: 'right' }}>
+											<button className="danger" disabled={busy} onClick={() => void remove(key.id)}>
+												Delete
+											</button>
+										</td>
 									</tr>
 								);
 							})}
