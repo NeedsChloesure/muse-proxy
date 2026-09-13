@@ -1,0 +1,10 @@
+# Copy to .dev.vars for local development (wrangler dev), or set the same name as a
+# secret in production with:  npx wrangler secret put CREDENTIAL_ENCRYPTION_KEY
+#
+# Must decode to exactly 32 bytes. Generate one with:
+#   openssl rand -base64 32
+#
+# Upstream service credentials are encrypted at rest with this key. If it is lost,
+# every stored connection credential must be re-entered; if it leaks, rotate it and
+# re-enter them too. It is never exposed to the API surface.
+CREDENTIAL_ENCRYPTION_KEY="replace-me-with-openssl-rand-base64-32"

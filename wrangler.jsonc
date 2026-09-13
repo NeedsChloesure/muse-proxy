@@ -1,6 +1,21 @@
 /**
- * For more details on how to configure Wrangler, refer to:
- * https://developers.cloudflare.com/workers/wrangler/configuration/
+ * Muse Proxy — an API-key gateway for user:password services.
+ *
+ * Routing contract (see src/index.ts):
+ *   /                        Worker-rendered landing page
+ *   /api/agent/<service>/*   provider-owned agent API (Bearer key, any HTTP method)
+ *   /api/*                   admin + agent JSON API (Hono)
+ *   /docs/*, /llms.txt       static assets
+ *   /user/*                  React SPA; unmatched paths fall back to the SPA shell
+ *
+ * `not_found_handling: "single-page-application"` always rewrites an unmatched
+ * request to the ROOT /index.html, which is why the SPA shell is built to
+ * dist/index.html with its bundle under dist/user/assets (Vite `assetsDir`), and
+ * the landing page is rendered by the Worker at "/" instead of living in the
+ * assets directory.
+ *
+ * The one required secret, CREDENTIAL_ENCRYPTION_KEY, is intentionally not
+ * listed here: see .dev.vars.example.
  */
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
@@ -12,33 +27,48 @@
 	},
 	"compatibility_flags": [
 		"nodejs_compat"
-	]
+	],
+	"assets": {
+		"directory": "./frontend/dist",
+		"binding": "ASSETS",
+		"not_found_handling": "single-page-application",
+		"run_worker_first": [
+			"/",
+			"/api/*"
+		]
+	},
 	/**
-	 * Smart Placement
-	 * https://developers.cloudflare.com/workers/configuration/smart-placement/#smart-placement
+	 * D1 holds accounts, encrypted service credentials, scoping rules and API keys.
+	 * Create it with `wrangler d1 create muse-proxy`, then paste the id below.
 	 */
-	// "placement": {  "mode": "smart" }
-	/**
-	 * Bindings
-	 * Bindings allow your Worker to interact with resources on the Cloudflare Developer Platform, including
-	 * databases, object storage, AI inference, real-time communication and more.
-	 * https://developers.cloudflare.com/workers/runtime-apis/bindings/
-	 */
-	/**
-	 * Environment Variables
-	 * https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
-	 * Note: Use secrets to store sensitive data.
-	 * https://developers.cloudflare.com/workers/configuration/secrets/
-	 */
-	// "vars": {  "MY_VARIABLE": "production_value" }
-	/**
-	 * Static Assets
-	 * https://developers.cloudflare.com/workers/static-assets/binding/
-	 */
-	// "assets": {  "directory": "./public/",  "binding": "ASSETS" }
-	/**
-	 * Service Bindings (communicate between multiple Workers)
-	 * https://developers.cloudflare.com/workers/wrangler/configuration/#service-bindings
-	 */
-	// "services": [  {   "binding": "MY_SERVICE",   "service": "my-service"  } ]
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "muse-proxy",
+			//"database_id": "00000000-0000-0000-0000-000000000000"
+		}
+	],
+	"vars": {
+		/** Allow self-service account creation from the frontend. The first account can always be created. */
+		"SIGNUP_ENABLED": "true",
+		/**
+		 * PBKDF2 iterations for account passwords. 100_000 keeps login inside the
+		 * Free plan's 10ms CPU budget; raise it on a Paid plan.
+		 * Stored inside each hash, so raising it never invalidates existing accounts.
+		 */
+		"PBKDF2_ITERATIONS": "100000",
+		"SESSION_TTL_DAYS": "30",
+		/** Allow upstream servers on private/LAN addresses (e.g. a self-hosted Radicale). */
+		"ALLOW_PRIVATE_NETWORKS": "false",
+		/** Allow plain http:// upstream servers. Off by default: credentials would travel in the clear. */
+		"ALLOW_INSECURE_HTTP": "false",
+		/** Optional single origin allowed to call /api/agent from a browser. Empty disables CORS entirely. */
+		"AGENT_CORS_ORIGIN": ""
+	},
+	"keep_vars": true,
+	"secrets": {
+		"required": [
+			"CREDENTIAL_ENCRYPTION_KEY"
+		]
+	}
 }

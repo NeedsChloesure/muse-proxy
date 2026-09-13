@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>API changelog — Muse Proxy</title>
+		<style>
+			:root { color-scheme: light dark; }
+			body { margin: 0 auto; max-width: 46rem; padding: 2.5rem 1.5rem 5rem;
+				font: 16px/1.65 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+			h1 { font-size: 1.7rem; margin: 0 0 0.3rem; }
+			h2 { font-size: 1.1rem; margin: 2rem 0 0.5rem; }
+			code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.87em;
+				background: rgba(127,127,127,0.12); padding: 0.1rem 0.3rem; border-radius: 4px; }
+			.muted { opacity: 0.7; }
+			ul { padding-left: 1.1rem; }
+			li { margin: 0.3rem 0; }
+			.badge { display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 0.1rem 0.5rem;
+				border: 1px solid currentColor; border-radius: 999px; margin-left: 0.5rem; }
+		</style>
+	</head>
+	<body>
+		<h1>API changelog</h1>
+		<p class="muted">
+			The API is date-versioned. Every response carries <code>X-Muse-Api-Version</code>. When the deployed version changes, each
+			active API key receives an <code>api_version_updated</code> notice pointing here.
+		</p>
+
+		<h2>2026-09-13 <span class="badge">current</span></h2>
+		<ul>
+			<li><code>admin</code>: <code>GET /api/admin/activity</code> and the console's Activity page were removed. The per-request audit log was an unbounded table on a deployment meant to stay inside the Workers Free plan, and it is not part of the agent API, so no agent-facing surface changes. What a human needs day to day — whether a key is still in use — remains visible per key as its <code>lastUsedAt</code> timestamp.</li>
+			<li><code>core</code>: keys are deleted, not revoked. <code>DELETE /api/admin/keys/:id</code> removes the key outright — grants and unread notices cascade with it — and a previously revoked key now authenticates exactly like any unknown token. The <code>revoked</code> field is gone from the key object and PATCH body, as is the console's re-enable action. To stop an agent immediately, delete its key and mint a fresh one; a key that passes its own expiry stays listed as expired — with its last-used timestamp — until you delete it. If your tooling relied on <code>revokedAt</code> in admin responses, read <code>active</code> and <code>expiresAt</code> instead.</li>
+			<li><code>core</code>: notice delivery changed from store-and-catch-up to emit-time fan-out. A notice is written per affected key when it is emitted and is deleted when acknowledged; previously a shared copy was kept and re-delivered when a key was minted or granted the collection afterwards. Agents that poll <code>X-Muse-Notices</code> see no difference in practice — every change to your access still arrives as a notice — but a notice can no longer arrive for a change a key could not have acted on at the time. The ack endpoint is unchanged, and the endpoint now returns <code>pending</code> as the number of unread rows rather than the count of a shared table.</li>
+		</ul>
+
+		<h2>2026-09-12</h2>
+		<ul>
+			<li><code>caldav</code>: request bodies are now forwarded for <code>REPORT</code> and <code>PROPFIND</code>, which were previously dropped. This is a fix, not a feature: a <code>calendar-query</code>, <code>calendar-multiget</code> or <code>sync-collection</code> sends its query in the body and could not work without it, and a <code>PROPFIND</code> that named its properties silently degraded into a request for all of them.</li>
+			<li><code>caldav</code>: a <code>REPORT</code> body names its own targets, so each one is now authorized individually rather than only the path the request was sent to. Two refusals are new: <code>400 invalid_report</code> when the body cannot be read well enough to know what it references, and <code>400 invalid_report_href</code> when a reference does not resolve inside the connection. A <code>calendar-multiget</code> that names a collection your key cannot read is refused, where before the upstream server would have answered it.</li>
+		</ul>
+
+		<h2>2026-09-11</h2>
+		<ul>
+			<li>Initial version.</li>
+			<li><code>GET /api/agent</code> service catalog, unauthenticated for the service list and capability-reporting with a key.</li>
+			<li><code>GET /api/agent/openapi.json</code> and per-service specifications, generated from the same declarations the router uses.</li>
+			<li><code>GET /api/agent/notices</code> and <code>POST /api/agent/notices/ack</code>, plus <code>X-Muse-Notices</code> on every response.</li>
+			<li><code>caldav</code> service: transparent CalDAV/CardDAV gateway with method and path authorisation, locally answered <code>OPTIONS</code>, and <code>MOVE</code>/<code>COPY</code> destination authorisation.</li>
+			<li>Human-facing admin API under <code>/api/admin</code> and the console at <code>/user/</code>.</li>
+		</ul>
+
+		<h2>Compatibility policy</h2>
+		<p>Within a version, changes are additive. A change that could break existing tooling — a renamed field, a changed default, a new refusal — bumps the version and is announced with a notice, never silently.</p>
+
+		<h2>Stability notes</h2>
+		<ul>
+			<li><code>error.code</code> values are part of the contract; <code>error.message</code> is human-readable prose and may change.</li>
+			<li><code>details.permittedResources</code> on a <code>403</code> is guaranteed, and is the supported way to discover what you can reach without a wildcard grant.</li>
+			<li>Proxied service responses are forwarded from upstream; their bodies are not part of this API's stability promise.</li>
+			<li>Targets named inside a request body — a <code>caldav</code> <code>REPORT</code> href, a <code>MOVE</code>/<code>COPY</code> <code>Destination</code> — are authorized individually. Such a request is refused, and never reaches the upstream server, if any one of them falls outside your grants.</li>
+			<li>A notice is delivered to every key whose grants are affected at the moment the change happens. A key that exists with the relevant grant receives it; a key minted afterwards does not re-receive past notices, because every change to its access from mint time onward is itself announced.</li>
+		</ul>
+	</body>
+</html>

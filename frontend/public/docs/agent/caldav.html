@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>CalDAV / CardDAV — Muse Proxy</title>
+		<style>
+			:root { color-scheme: light dark; }
+			body { margin: 0 auto; max-width: 50rem; padding: 2.5rem 1.5rem 5rem;
+				font: 16px/1.65 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+			h1 { font-size: 1.7rem; letter-spacing: -0.01em; margin: 0 0 0.3rem; }
+			h2 { font-size: 1.15rem; margin: 2.2rem 0 0.6rem; }
+			h3 { font-size: 1rem; margin: 1.6rem 0 0.4rem; }
+			code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.87em; }
+			pre { background: rgba(127,127,127,0.12); padding: 0.9rem 1rem; border-radius: 8px; overflow-x: auto; }
+			code { background: rgba(127,127,127,0.12); padding: 0.1rem 0.3rem; border-radius: 4px; }
+			pre code { background: none; padding: 0; }
+			table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin: 0.6rem 0; }
+			th, td { text-align: left; padding: 0.45rem 0.5rem; border-bottom: 1px solid rgba(127,127,127,0.3); vertical-align: top; }
+			th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.7; }
+			.muted { opacity: 0.7; }
+			.note { border-left: 3px solid currentColor; padding: 0.1rem 0 0.1rem 0.9rem; opacity: 0.85; margin: 1rem 0; }
+			a { color: inherit; }
+		</style>
+	</head>
+	<body>
+		<h1>CalDAV / CardDAV</h1>
+		<p class="muted">Service type <code>caldav</code> · <a href="/docs/">all docs</a></p>
+
+		<h2>The idea</h2>
+		<p>You speak DAV to this gateway exactly as you would to the server itself. Muse Proxy holds the username and password, injects them upstream, and refuses anything the owner did not permit. You never see the credentials, so a compromised agent cannot leak them.</p>
+
+		<h2>Addressing</h2>
+		<pre><code>ANY /api/agent/caldav/&lt;connectionId&gt;/&lt;path&gt;</code></pre>
+		<p>You supply a <strong>path</strong>, never a URL. The path is relative to the base URL the owner configured, so if the server root is <code>https://cloud.example.com/remote.php/dav/</code> and the collection is <code>.../calendars/alice/work/</code>, the path is <code>calendars/alice/work/</code>.</p>
+
+		<h3>Work out what you can reach</h3>
+		<p>Do not guess. Ask the catalog, which reports each collection and your effective level on it:</p>
+		<pre><code>curl -H "Authorization: Bearer muse_..." https://&lt;host&gt;/api/agent</code></pre>
+		<pre><code>{
+  "data": {
+    "connections": [
+      {
+        "id": "0f1c...",
+        "label": "Personal",
+        "mount": "/api/agent/caldav/0f1c.../",
+        "wildcard": false,
+        "resources": [
+          { "resourceKey": "calendars/alice/work", "kind": "calendar", "access": "read" },
+          { "resourceKey": "calendars/alice/home", "kind": "calendar", "access": "write" },
+          { "resourceKey": "addressbooks/alice/people", "kind": "addressbook", "access": "read" }
+        ]
+      }
+    ]
+  }
+}</code></pre>
+
+		<h2>Methods</h2>
+		<table>
+			<thead><tr><th>Method</th><th>Requires</th></tr></thead>
+			<tbody>
+				<tr><td><code>GET</code>, <code>HEAD</code>, <code>PROPFIND</code>, <code>REPORT</code></td><td><code>read</code></td></tr>
+				<tr><td><code>PUT</code>, <code>POST</code>, <code>DELETE</code>, <code>MKCOL</code>, <code>MKCALENDAR</code>, <code>PROPPATCH</code>, <code>MOVE</code>, <code>COPY</code>, <code>LOCK</code>, <code>UNLOCK</code></td><td><code>write</code></td></tr>
+				<tr><td><code>OPTIONS</code></td><td>Answered locally, no access required</td></tr>
+			</tbody>
+		</table>
+		<p>Anything else — including <code>ACL</code> — is refused. That is deliberate: privilege changes are not something an agent should do through a scoped key.</p>
+
+		<h3>Ask before you act</h3>
+		<p><code>OPTIONS</code> never contacts the server and tells you your own capability set, so it is the cheapest way to avoid a failed write:</p>
+		<pre><code>curl -i -X OPTIONS -H "Authorization: Bearer muse_..." \
+  https://&lt;host&gt;/api/agent/caldav/0f1c.../calendars/alice/home/</code></pre>
+		<pre><code>HTTP/2 204
+allow: OPTIONS, GET, HEAD, PROPFIND, REPORT, PUT, POST, DELETE, ...
+x-muse-access: write
+dav: 1, 2, 3, calendar-access, addressbook, extended-mkcol</code></pre>
+		<p><code>x-muse-access</code> is your effective level on that path. Every proxied response also carries <code>x-muse-access</code> and, when applicable, <code>x-muse-resource</code>.</p>
+
+		<h2>Discovery and enumeration</h2>
+		<p>Inside a collection you have been granted, everything behaves normally: <code>PROPFIND</code> with <code>Depth: 1</code>, <code>REPORT</code> with <code>calendar-query</code> or <code>calendar-multiget</code>, and so on.</p>
+		<div class="note">
+			<p>A request that spans collections — the server root, the principal, or a calendar-home — is only permitted when the key has a wildcard grant <em>and</em> the connection allows every collection. Otherwise it is refused, because a <code>Depth: 1</code> <code>PROPFIND</code> from the root would otherwise reveal the names, URLs and entity tags of calendars you may not read.</p>
+			<p>Refusals list <code>permittedResources</code>, in the form used everywhere else on this API: the collection path relative to the connection's base URL, without leading or trailing slashes (<code>calendars/alice/work</code>). Use the catalog instead of probing the root.</p>
+		</div>
+
+		<h2>REPORT</h2>
+		<p><code>REPORT</code> is how you query rather than list: <code>calendar-query</code> for a time range, <code>calendar-multiget</code> for a specific set of objects, <code>sync-collection</code> for changes since a token. It requires <code>read</code>, and the query itself travels in the request body, which is forwarded intact.</p>
+		<p>Unlike every other method, a <code>REPORT</code> body names its own targets. A <code>calendar-multiget</code> lists <code>&lt;D:href&gt;</code> elements and the server resolves each of them independently, so the gateway authorizes every href as well as the path you sent the request to. The practical consequence: <strong>a href that resolves to a collection your key cannot read is refused</strong>, even though the request URL itself was allowed.</p>
+		<pre><code>curl -X REPORT \
+  -H "Authorization: Bearer muse_..." \
+  -H "Depth: 1" \
+  -H "Content-Type: application/xml; charset=utf-8" \
+  --data-binary @multiget.xml \
+  https://&lt;host&gt;/api/agent/caldav/0f1c.../calendars/alice/work/</code></pre>
+		<p>where <code>multiget.xml</code> asks for objects in that same calendar:</p>
+		<pre><code>&lt;?xml version="1.0" encoding="utf-8"?&gt;
+&lt;C:calendar-multiget xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav"&gt;
+  &lt;D:prop&gt;&lt;D:getetag/&gt;&lt;C:calendar-data/&gt;&lt;/D:prop&gt;
+  &lt;D:href&gt;/calendars/alice/work/a.ics&lt;/D:href&gt;
+&lt;/C:calendar-multiget&gt;</code></pre>
+		<p>Hrefs may be written in whichever form you naturally hold them: relative to the collection (<code>a.ics</code>), as the collection path, as an absolute URL on the connection's origin, or as a gateway path. Anything that does not resolve inside this connection — another origin, another connection — is refused rather than guessed at, since authorizing one resource while the server acted on another is the failure this check exists to prevent. Entity references are not accepted either: they cannot appear in a real href, and a parser that expands them differently from the server's would be a way to name a target the check never saw.</p>
+
+		<h2>Common operations</h2>
+
+		<h3>List events in a collection</h3>
+		<pre><code>curl -X PROPFIND -H "Depth: 1" -H "Authorization: Bearer muse_..." \
+  https://&lt;host&gt;/api/agent/caldav/0f1c.../calendars/alice/work/</code></pre>
+
+		<h3>Create or replace an event</h3>
+		<p>Requires <code>write</code>. The path ends in the object's filename, usually its UID plus <code>.ics</code>.</p>
+		<pre><code>curl -X PUT \
+  -H "Authorization: Bearer muse_..." \
+  -H "Content-Type: text/calendar; charset=utf-8" \
+  -H "If-None-Match: *" \
+  --data-binary @event.ics \
+  https://&lt;host&gt;/api/agent/caldav/0f1c.../calendars/alice/work/&lt;uid&gt;.ics</code></pre>
+
+		<h3>Move or copy</h3>
+		<p>Both ends are authorized independently: you need <code>write</code> on the source <em>and</em> on the destination. The <code>Destination</code> header is accepted in any of three forms — an upstream path (<code>/calendars/alice/home/x.ics</code>), a gateway path (<code>/api/agent/caldav/&lt;connectionId&gt;/calendars/alice/home/x.ics</code>), or an absolute URL on the connection's origin. Anything outside this connection is refused.</p>
+		<pre><code>curl -X MOVE \
+  -H "Authorization: Bearer muse_..." \
+  -H "Destination: /api/agent/caldav/0f1c.../calendars/alice/home/x.ics" \
+  https://&lt;host&gt;/api/agent/caldav/0f1c.../calendars/alice/work/x.ics</code></pre>
+
+		<h2>Redirects</h2>
+		<p>The gateway never follows a redirect on your behalf: the decision to allow a request was made for the collection you asked for, and silently following a <code>Location</code> would re-send that request somewhere the decision does not cover. A <code>3xx</code> is passed back unchanged, with a <code>Location</code> that stays inside this connection rewritten into gateway coordinates so you can follow it yourself. A <code>Location</code> pointing at any other origin is dropped, because the request carries credentials.</p>
+
+		<h2>Failure modes worth knowing</h2>
+		<table>
+			<thead><tr><th>Response</th><th>Meaning and what to do</th></tr></thead>
+			<tbody>
+				<tr><td><code>403 no_grant</code></td><td>Your key has no grant on this connection at all. The human must grant it.</td></tr>
+				<tr><td><code>403 insufficient_access</code></td><td>You have the wrong level. Read <code>permittedResources</code>; a write needs the owner to widen the grant.</td></tr>
+				<tr><td><code>403</code> on a root-level request</td><td>Enumeration across collections needs a wildcard grant. Use <code>GET /api/agent</code>.</td></tr>
+				<tr><td><code>401</code> with a JSON body and no <code>X-Muse-Access</code></td><td>The gateway refused your key: revoked, expired or mistyped. Do not keep retrying.</td></tr>
+				<tr><td><code>401</code> or <code>403</code> carrying <code>X-Muse-Access</code></td><td>Forwarded from the upstream server: the human's stored password was refused there. Tell the human; do not attempt to fix credentials yourself.</td></tr>
+				<tr><td><code>502</code></td><td>The upstream server could not be reached. Tell the human; this is not something you can retry your way out of.</td></tr>
+				<tr><td><code>409</code> / <code>412</code></td><td>Forwarded from upstream: a real DAV precondition failure. Re-read the resource and retry.</td></tr>
+				<tr><td><code>400 invalid_report</code></td><td>A <code>REPORT</code> body the gateway could not read: malformed XML, or an href with no readable target. Send well-formed XML with plain paths.</td></tr>
+				<tr><td><code>400 invalid_report_href</code></td><td>A <code>REPORT</code> named a resource that is not inside this connection. Only this connection's own server can be addressed.</td></tr>
+			</tbody>
+		</table>
+
+		<div class="note">
+			<p>When a write is refused, the correct next step is to tell the human what you were trying to do and why it needs a wider grant — not to look for another route. The scoping is the feature.</p>
+		</div>
+
+		<h2>Notices you may receive</h2>
+		<p><code>grant_downgraded</code>, <code>resource_removed</code>, <code>connection_deleted</code> and <code>credentials_changed</code> all concern this service. If you cached collection paths or assumed write access, re-read <code>GET /api/agent</code> after receiving one.</p>
+	</body>
+</html>

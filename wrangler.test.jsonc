@@ -1,0 +1,37 @@
+/**
+ * Wrangler config used ONLY by the test runner (see vitest.config.mts).
+ *
+ * Why this file exists: `@cloudflare/vitest-pool-workers` pins an exact, older
+ * wrangler internally (4.72 today) and validates the whole config it is handed.
+ * That version predates `routes[].enabled` / `routes[].previews_enabled`, so
+ * pointing the pool at wrangler.jsonc aborted every run with a config-validation
+ * error before a single test executed. The deploy config keeps those keys and
+ * stays deployable; the suite reads this one.
+ *
+ * It mirrors the parts of wrangler.jsonc that change what the tests exercise:
+ * entry point, compatibility date and flags, the D1 binding, and the assets
+ * binding (routing.spec.ts and docs.spec.ts fetch /docs/*, /llms.txt and the SPA
+ * shell through it). Vars are deliberately absent — vitest.config.mts sets all
+ * of them explicitly under miniflare.bindings.
+ *
+ * If you change the entry point, compatibility date/flags, D1 binding or assets
+ * configuration in wrangler.jsonc, change it here too.
+ */
+{
+	"name": "muse-proxy-test",
+	"main": "./src/index.ts",
+	"compatibility_date": "2026-03-10",
+	"compatibility_flags": ["nodejs_compat"],
+	"assets": {
+		"directory": "./frontend/dist",
+		"binding": "ASSETS",
+		"not_found_handling": "single-page-application",
+		"run_worker_first": ["/", "/api/*"]
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "muse-proxy-test"
+		}
+	]
+}

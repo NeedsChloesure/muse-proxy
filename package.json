@@ -1,13 +1,20 @@
 {
-	"name": "floral-bird-e575",
+	"name": "muse-proxy",
 	"version": "0.0.0",
 	"private": true,
+	"license": "MIT",
 	"scripts": {
-		"deploy": "wrangler deploy",
 		"dev": "wrangler dev",
 		"start": "wrangler dev",
+		"dev:worker": "wrangler dev",
+		"dev:web": "npm --prefix frontend run dev",
+		"build": "npm --prefix frontend run build",
+		"deploy": "npm run build && wrangler deploy",
 		"test": "vitest",
-		"cf-typegen": "wrangler types"
+		"typecheck": "tsc --noEmit && npm --prefix frontend run typecheck",
+		"cf-typegen": "wrangler types",
+		"db:migrate:local": "wrangler d1 migrations apply DB --local",
+		"db:migrate:remote": "wrangler d1 migrations apply DB --remote"
 	},
 	"devDependencies": {
 		"@cloudflare/vitest-pool-workers": "^0.12.4",
@@ -15,5 +22,9 @@
 		"typescript": "^5.5.2",
 		"vitest": "~3.2.0",
 		"wrangler": "^4.131.1"
+	},
+	"dependencies": {
+		"fast-xml-parser": "^5.11.1",
+		"hono": "^4.13.7"
 	}
 }

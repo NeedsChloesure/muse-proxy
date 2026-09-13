@@ -1,3 +1,8 @@
+# Wrangler types
+worker-configuration.d.ts
+# freebuff
+.freebuff/*
+
 # Logs
 
 logs

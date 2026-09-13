@@ -1,0 +1,416 @@
+:root {
+	color-scheme: light dark;
+	--bg: #f7f7f8;
+	--panel: #ffffff;
+	--text: #18181b;
+	--muted: #6b7280;
+	--line: #e4e4e7;
+	--accent: #2563eb;
+	--accent-soft: #eff6ff;
+	--danger: #dc2626;
+	--danger-soft: #fef2f2;
+	--warn: #b45309;
+	--warn-soft: #fffbeb;
+	--ok: #15803d;
+	--ok-soft: #f0fdf4;
+	--radius: 10px;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--bg: #0b0b0d;
+		--panel: #16161a;
+		--text: #f4f4f5;
+		--muted: #9ca3af;
+		--line: #2a2a30;
+		--accent: #60a5fa;
+		--accent-soft: #172033;
+		--danger: #f87171;
+		--danger-soft: #2a1616;
+		--warn: #fbbf24;
+		--warn-soft: #2a2110;
+		--ok: #4ade80;
+		--ok-soft: #12240f;
+	}
+}
+
+* {
+	box-sizing: border-box;
+}
+
+body {
+	margin: 0;
+	background: var(--bg);
+	color: var(--text);
+	font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+a {
+	color: var(--accent);
+}
+
+code {
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 0.88em;
+}
+
+.center {
+	display: grid;
+	place-items: center;
+	min-height: 100vh;
+	color: var(--muted);
+}
+
+/* layout ------------------------------------------------------------------ */
+
+.app {
+	display: grid;
+	grid-template-columns: 15rem 1fr;
+	min-height: 100vh;
+}
+
+.sidebar {
+	border-right: 1px solid var(--line);
+	padding: 1.25rem 1rem;
+	display: flex;
+	flex-direction: column;
+	gap: 0.35rem;
+	background: var(--panel);
+}
+
+.brand {
+	font-weight: 700;
+	font-size: 1rem;
+	letter-spacing: -0.01em;
+	text-decoration: none;
+	color: inherit;
+	padding: 0 0.5rem 0.75rem;
+}
+
+.brand span {
+	display: block;
+	font-weight: 400;
+	font-size: 0.75rem;
+	color: var(--muted);
+}
+
+.navlink {
+	display: block;
+	padding: 0.45rem 0.6rem;
+	border-radius: 8px;
+	text-decoration: none;
+	color: inherit;
+	font-size: 0.92rem;
+}
+
+.navlink:hover {
+	background: var(--accent-soft);
+}
+
+.navlink.active {
+	background: var(--accent-soft);
+	color: var(--accent);
+	font-weight: 600;
+}
+
+.spacer {
+	flex: 1;
+}
+
+main {
+	padding: 2rem 2.25rem 4rem;
+	max-width: 62rem;
+}
+
+h1 {
+	font-size: 1.4rem;
+	letter-spacing: -0.01em;
+	margin: 0 0 0.35rem;
+}
+
+h2 {
+	font-size: 1.05rem;
+	margin: 2rem 0 0.75rem;
+}
+
+h3 {
+	font-size: 0.95rem;
+	margin: 1.25rem 0 0.5rem;
+}
+
+.lead {
+	color: var(--muted);
+	margin: 0 0 1.5rem;
+}
+
+/* panels ------------------------------------------------------------------ */
+
+.panel {
+	background: var(--panel);
+	border: 1px solid var(--line);
+	border-radius: var(--radius);
+	padding: 1.15rem 1.25rem;
+	margin-bottom: 1.25rem;
+}
+
+.panel h2:first-child,
+.panel h3:first-child {
+	margin-top: 0;
+}
+
+.row {
+	display: flex;
+	gap: 0.75rem;
+	align-items: center;
+	flex-wrap: wrap;
+}
+
+.between {
+	display: flex;
+	justify-content: space-between;
+	align-items: flex-start;
+	gap: 1rem;
+	flex-wrap: wrap;
+}
+
+.grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+	gap: 0.9rem;
+}
+
+/* forms ------------------------------------------------------------------- */
+
+label {
+	display: block;
+	font-size: 0.82rem;
+	font-weight: 600;
+	margin-bottom: 0.3rem;
+	color: var(--muted);
+}
+
+input,
+select,
+textarea {
+	width: 100%;
+	padding: 0.5rem 0.65rem;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	background: var(--bg);
+	color: var(--text);
+	font: inherit;
+}
+
+input:focus,
+select:focus {
+	outline: 2px solid var(--accent);
+	outline-offset: 1px;
+}
+
+.hint {
+	font-size: 0.8rem;
+	color: var(--muted);
+	margin: 0.3rem 0 0;
+}
+
+button {
+	font: inherit;
+	padding: 0.5rem 0.9rem;
+	border-radius: 8px;
+	border: 1px solid var(--line);
+	background: var(--panel);
+	color: var(--text);
+	cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+	border-color: var(--accent);
+}
+
+button:disabled {
+	opacity: 0.55;
+	cursor: default;
+}
+
+button.primary {
+	background: var(--accent);
+	border-color: var(--accent);
+	color: #fff;
+	font-weight: 600;
+}
+
+@media (prefers-color-scheme: dark) {
+	button.primary {
+		color: #0b0b0d;
+	}
+}
+
+button.danger {
+	color: var(--danger);
+	border-color: var(--danger);
+}
+
+button.link {
+	border: none;
+	background: none;
+	padding: 0;
+	color: var(--accent);
+	text-decoration: underline;
+}
+
+/* messages ---------------------------------------------------------------- */
+
+.alert {
+	padding: 0.7rem 0.85rem;
+	border-radius: 8px;
+	font-size: 0.88rem;
+	margin: 0 0 1rem;
+	border: 1px solid transparent;
+}
+
+.alert.error {
+	background: var(--danger-soft);
+	border-color: var(--danger);
+	color: var(--danger);
+}
+
+.alert.ok {
+	background: var(--ok-soft);
+	border-color: var(--ok);
+	color: var(--ok);
+}
+
+.alert.warn {
+	background: var(--warn-soft);
+	border-color: var(--warn);
+	color: var(--warn);
+}
+
+/* tables ------------------------------------------------------------------ */
+
+table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 0.9rem;
+}
+
+th,
+td {
+	text-align: left;
+	padding: 0.55rem 0.5rem;
+	border-bottom: 1px solid var(--line);
+	vertical-align: middle;
+	/* Long values — DAV paths, resource keys, key prefixes — have no spaces to
+	   break at. Without this a single cell sets the table's minimum width and
+	   the table spills out past its panel. `anywhere` (unlike `break-word`)
+	   shrinks the min-content width, which is what stops the overflow. */
+	overflow-wrap: anywhere;
+}
+
+.nowrap {
+	white-space: nowrap;
+}
+
+th {
+	font-size: 0.75rem;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	color: var(--muted);
+	/* Column headings are short and wrapping them mid-word (METHO / D) is worse
+	   than letting the table give them their natural width. */
+	white-space: nowrap;
+}
+
+tbody tr:last-child td {
+	border-bottom: none;
+}
+
+.pill {
+	display: inline-block;
+	padding: 0.1rem 0.5rem;
+	border-radius: 999px;
+	font-size: 0.75rem;
+	font-weight: 600;
+	border: 1px solid var(--line);
+}
+
+.pill.ok {
+	background: var(--ok-soft);
+	color: var(--ok);
+	border-color: var(--ok);
+}
+
+.pill.bad {
+	background: var(--danger-soft);
+	color: var(--danger);
+	border-color: var(--danger);
+}
+
+.pill.warn {
+	background: var(--warn-soft);
+	color: var(--warn);
+	border-color: var(--warn);
+}
+
+.pill.muted {
+	color: var(--muted);
+}
+
+.mono {
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	font-size: 0.85rem;
+}
+
+.muted {
+	color: var(--muted);
+}
+
+.token {
+	word-break: break-all;
+	background: var(--bg);
+	border: 1px dashed var(--accent);
+	border-radius: 8px;
+	padding: 0.7rem 0.8rem;
+	margin: 0.5rem 0;
+}
+
+pre {
+	background: var(--bg);
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	padding: 0.8rem;
+	overflow-x: auto;
+	margin: 0.5rem 0 0;
+}
+
+/* access matrix ----------------------------------------------------------- */
+
+.scope-head {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 1rem;
+	padding-bottom: 0.4rem;
+	border-bottom: 1px solid var(--line);
+	margin-bottom: 0.4rem;
+}
+
+.radio-group {
+	display: inline-flex;
+	gap: 0.35rem;
+}
+
+.radio-group label {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.25rem;
+	margin: 0;
+	font-weight: 500;
+	font-size: 0.82rem;
+	color: var(--text);
+	cursor: pointer;
+}
+
+.radio-group input {
+	width: auto;
+}

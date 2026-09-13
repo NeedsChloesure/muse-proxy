@@ -1,0 +1,61 @@
+# Muse Proxy
+
+> An API-key gateway for services that normally require a username and password.
+> The account owner stores the credentials once and hands out scoped, revocable
+> API keys instead. Every request is limited twice over: by a ceiling the owner
+> set per resource, and by the grants attached to your key.
+
+You are probably here because you were given a key like `muse_...`. Do not ask
+the human for their upstream password — you cannot use it, and the point of this
+service is that you never see it.
+
+## Start here
+
+- `GET /api/agent` — the service catalog. Without a key it lists the available
+  services. With `Authorization: Bearer <key>` it also lists every connection and
+  collection your key can reach, with the effective access level for each. This is
+  the fastest way to learn your capabilities.
+- `GET /api/agent/openapi.json` — OpenAPI 3.1 for this exact deployment. Each
+  service also publishes its own spec at `/api/agent/<service>/openapi.json`.
+- `GET /api/agent/notices` — changes that affect you: access was reduced,
+  credentials rotated, the API version moved. Read these and tell the human you
+  are working for.
+- `/docs/` — human-readable documentation. `/docs/changelog.html` lists API changes.
+
+## Authentication
+
+Send `Authorization: Bearer muse_...`. Keys are shown to the human exactly once
+and stored hashed. Never in a query string: it leaks into logs.
+
+## How permission works
+
+Two independent layers must both allow a request:
+
+1. the connection ceiling, set per resource by the account owner
+   (`none`, `read` or `write`);
+2. your key's own grants, which can only narrow that.
+
+A refusal returns HTTP 403 with a JSON body containing `required`, `effective`,
+and `permittedResources` — the resources you may use, named in each service's
+own vocabulary. Read that instead of retrying blindly.
+
+## Versioning
+
+The API is date-versioned. Every response carries `X-Muse-Api-Version`.
+`api_version_updated` notices are delivered when it changes.
+
+## Endpoints
+
+- `GET  /api/agent` — catalog and capabilities
+- `GET  /api/agent/openapi.json` — specification
+- `GET  /api/agent/notices` — pending notices
+- `POST /api/agent/notices/ack` — acknowledge notices (`{ "ids": [...] }`)
+- `*    /api/agent/<service>/<connectionId>/<path>` — the service itself
+
+## Services
+
+- `caldav` — CalDAV / CardDAV. Speak DAV directly against
+  `/api/agent/caldav/<connectionId>/<path>`. See `/docs/agent/caldav.html`.
+  `REPORT` works and its query is forwarded, but the resources a body names (the
+  `D:href` elements of a `calendar-multiget`) must each fall inside the
+  collections you can read — not just the path you sent the request to.
