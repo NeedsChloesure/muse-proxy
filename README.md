@@ -2,6 +2,8 @@
 ---
 # Muse Proxy
 
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/NeedsChloesure/muse-proxy)
+
 An API-key gateway for services that normally require a username and password. This service is primarily for [Meta Muse](https://muse.ai), which has strict guardrails against agents storing passwords and other secrets in plaintext. Agents adhere to this very well, so it's easier to work around it by supporting **what is allowed** rather than doing creative workarounds.
 
 The account owner stores the upstream credentials once, and chooses the connection ceiling (what must never happen). API keys may then be created and handed to agents so they can access/edit your supported service. Additionally, API keys can be scoped to allow access to only some access (i.e. ceiling is write, but this other agent should only read).
@@ -24,7 +26,7 @@ npm run build            # builds the SPA into frontend/dist
 Create the database and apply the schema:
 
 ```bash
-npx wrangler d1 create muse-proxy     # paste the printed id into wrangler.jsonc
+npx wrangler d1 create muse-proxy     # replace the placeholder database_id in wrangler.jsonc
 npm run db:migrate:local
 ```
 
@@ -45,11 +47,25 @@ npm run dev:web          # Vite dev server on :5173, proxying /api to :8787
 Open `/user/` and create the first account. The first account always works even
 with sign-up disabled, and it is the deployment's administrator.
 
-Deploy with `npm run deploy` and set a different secret in production:
+### Deploying
+
+The button above clones this repository into your own GitHub account, provisions the
+D1 database, and asks for `CREDENTIAL_ENCRYPTION_KEY` (generate one with
+`openssl rand -base64 32`, as `.dev.vars.example` describes). Nothing else needs
+pasting: the build installs the frontend's own dependencies, and the deploy command
+applies the migrations before it ships the Worker.
+
+By hand instead, against a database you created yourself:
 
 ```bash
+npx wrangler d1 create muse-proxy     # replace the placeholder id in wrangler.jsonc
+npm run deploy                        # migrations, then the SPA, then the Worker
 npx wrangler secret put CREDENTIAL_ENCRYPTION_KEY
 ```
+
+`npm run deploy` applies migrations on every run. Only unapplied ones are applied,
+and the confirmation prompt is skipped outside an interactive terminal, so it is safe
+in a build pipeline.
 
 ## How permission works
 

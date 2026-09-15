@@ -46,7 +46,15 @@
 		{
 			"binding": "DB",
 			"database_name": "muse-proxy",
-			//"database_id": "00000000-0000-0000-0000-000000000000"
+			/**
+			 * A placeholder, deliberately. The Deploy to Cloudflare button needs a
+			 * value here to recognise the binding at all; it provisions the database
+			 * and writes the real id into the repository it creates for you.
+			 *
+			 * Deploying by hand, replace it with the id printed by
+			 * `npx wrangler d1 create muse-proxy`.
+			 */
+			"database_id": "00000000-0000-0000-0000-000000000000"
 		}
 	],
 	"vars": {
