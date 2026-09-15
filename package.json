@@ -10,8 +10,8 @@
 		"dev:web": "npm --prefix frontend run dev",
 		"build": "npm --prefix frontend run build",
 		"deploy": "npm run build && wrangler deploy",
-		"test": "vitest",
-		"typecheck": "tsc --noEmit && npm --prefix frontend run typecheck",
+		"test": "npm run build && vitest",
+		"typecheck": "npm run cf-typegen && tsc --noEmit && npm --prefix frontend run typecheck",
 		"cf-typegen": "wrangler types",
 		"db:migrate:local": "wrangler d1 migrations apply DB --local",
 		"db:migrate:remote": "wrangler d1 migrations apply DB --remote"

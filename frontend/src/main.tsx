@@ -10,8 +10,8 @@ if (!container) throw new Error('Missing #root element.');
 
 createRoot(container).render(
 	<StrictMode>
-		{/* Served from /user/, including when the Worker serves the shell for a deep link. */}
-		<BrowserRouter basename="/user">
+		{/* Production is mounted at /user/; Vite serves the app at / during local web development. */}
+		<BrowserRouter basename={import.meta.env.DEV ? undefined : '/user'}>
 			<App />
 		</BrowserRouter>
 	</StrictMode>,

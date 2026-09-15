@@ -51,10 +51,9 @@ describe('extractReportHrefs', () => {
 		expect(extractReportHrefs('<m:href xmlns:m="DAV:">\n  /a.ics\n</m:href>')).toEqual(['/a.ics']);
 	});
 
-	it('reports no targets for a body that is not XML at all', () => {
-		// Nothing to authorize: no server can act on this either.
-		expect(extractReportHrefs('')).toEqual([]);
-		expect(extractReportHrefs('not xml at all')).toEqual([]);
+	it('refuses a body that is not XML at all', () => {
+		expect(extractReportHrefs('')).toBeNull();
+		expect(extractReportHrefs('not xml at all')).toBeNull();
 	});
 
 	it('sees the real target of an entity declared in an internal DTD subset', () => {

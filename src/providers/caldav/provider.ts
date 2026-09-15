@@ -17,7 +17,7 @@ import { urlPolicy } from '../../config';
 import { decryptSecret } from '../../lib/crypto';
 import { HttpError } from '../../lib/http';
 import { absolutizeLocation, sanitizeRequestHeaders, sanitizeResponseHeaders } from '../../lib/upstream';
-import { fetchWithStoredAuth } from '../../lib/upstream-auth';
+import { fetchWithStoredAuth, SUPPORTED_AUTH_TYPES } from '../../lib/upstream-auth';
 import { assertAllowedBaseUrl, normalizePath, resolveUpstreamUrl } from '../../lib/url';
 import { ACCESS_RANK, type Access } from '../../types';
 import { configString } from '../gateway';
@@ -77,6 +77,7 @@ export const caldavProvider: ServiceProvider = {
 	docsPath: '/docs/agent/caldav.html',
 	openapiPath: '/api/agent/caldav/openapi.json',
 	defaultAuthType: 'basic',
+	authTypes: SUPPORTED_AUTH_TYPES,
 	fields: CALDAV_FIELDS,
 	credentials: CALDAV_CREDENTIALS,
 
@@ -305,7 +306,8 @@ function tooLarge(bytes: number): HttpError {
  * only what the key can actually do, so a client can plan without probing.
  */
 function optionsResponse(access: Access): Response {
-	const allow = ['OPTIONS', 'GET', 'HEAD', 'PROPFIND', 'REPORT'];
+	const allow = ['OPTIONS'];
+	if (ACCESS_RANK[access] >= ACCESS_RANK.read) allow.push(...['GET', 'HEAD', 'PROPFIND', 'REPORT']);
 	if (ACCESS_RANK[access] >= ACCESS_RANK.write) allow.push(...WRITE_ALLOW.split(', '));
 	return new Response(null, {
 		status: 204,

@@ -16,7 +16,7 @@
  *   /user/*                  SPA shell, with client-side route fallback
  *   /docs/*, /llms.txt       static assets
  *
- * `assets.run_worker_first` is `["/", "/api/*"]`, so static assets never invoke
+ * `assets.run_worker_first` is `["/", "/api", "/api/*"]`, so static assets never invoke
  * the Worker and only unmatched paths reach the fallback at the bottom.
  */
 
@@ -54,7 +54,7 @@ export default {
 				return await handleAgentRequest(request, env, ctx);
 			}
 
-			if (path.startsWith('/api/')) {
+			if (path === '/api' || path.startsWith('/api/')) {
 				return await api.fetch(request, env, ctx);
 			}
 

@@ -162,6 +162,11 @@ describe('provider-owned configuration', () => {
 });
 
 describe('discovery', () => {
+	it('rejects an unsupported authentication type before storing a connection', async () => {
+		const result = await createConnection({ authType: 'negotiate' });
+		expect(result.status).toBe(400);
+	});
+
 	it('verifies credentials, discovers collections, and enables none of them', async () => {
 		const { status, body } = await createConnection();
 		expect(status).toBe(200);

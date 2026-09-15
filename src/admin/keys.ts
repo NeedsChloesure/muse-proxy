@@ -13,7 +13,7 @@ import { emitNotice } from '../agent/notices';
 import { randomToken, sha256Hex } from '../lib/crypto';
 import { HttpError, json } from '../lib/http';
 import { asObject, optionalInt, optionalString, readJson, requiredArray, requiredOneOf, requiredString } from '../lib/validate';
-import { accessForResource, type GrantEntry, type ScopeEntry } from '../lib/access';
+import { accessForConnection, accessForResource, type GrantEntry, type ScopeEntry } from '../lib/access';
 import { ACCESS_RANK, KEY_PREFIX, type Access, type ApiKey, type ApiKeyGrant } from '../types';
 
 export const keyRoutes = new Hono<AppBindings>();
@@ -86,12 +86,12 @@ keyRoutes.patch('/:id', async (c) => {
 	const body = await readJson(c.req.raw);
 
 	const name = optionalString(body, 'name', { max: 80 });
-	const expiresInDays = optionalInt(body, 'expiresInDays', { min: 0, max: 3650 });
+	const expiresInDays = optionalInt(body, 'expiresInDays', { min: 1, max: 3650 });
 
 	if (name !== undefined) await repo.updateApiKey(c.env.DB, key.id, { name });
 	if (expiresInDays !== undefined) {
 		await repo.updateApiKey(c.env.DB, key.id, {
-			expiresAt: expiresInDays === 0 ? null : Date.now() + expiresInDays * 86_400_000,
+			expiresAt: Date.now() + expiresInDays * 86_400_000,
 		});
 	}
 
@@ -231,6 +231,14 @@ async function announceGrantChange(c: AppContext, key: ApiKey, before: ApiKeyGra
 			...after.filter((grant) => grant.connectionId === connectionId).map((grant) => grant.resourceKey),
 		]);
 		candidates.delete('*');
+
+		if (scope.length === 0) {
+			const beforeLevel = accessForConnection([], beforeEntries);
+			const afterLevel = accessForConnection([], afterEntries);
+			if (ACCESS_RANK[afterLevel] < ACCESS_RANK[beforeLevel]) tightened = true;
+			if (ACCESS_RANK[afterLevel] > ACCESS_RANK[beforeLevel]) widened = true;
+			continue;
+		}
 
 		for (const candidate of candidates) {
 			const beforeLevel = accessForResource(scope, beforeEntries, candidate);

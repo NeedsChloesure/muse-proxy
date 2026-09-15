@@ -31,7 +31,7 @@ export const adminRoutes = new Hono<AppBindings>();
 
 const auth = new Hono<AppBindings>();
 
-auth.post('/signup', async (c) => {
+auth.post('/signup', requireSameOrigin, async (c) => {
 	const body = await readJson(c.req.raw);
 	const username = requiredString(body, 'username', {
 		pattern: USERNAME_PATTERN,
@@ -50,16 +50,36 @@ auth.post('/signup', async (c) => {
 
 	const config = configFrom(c.env);
 	const id = crypto.randomUUID();
+	const passwordHash = await hashPassword(password, config.pbkdf2Iterations);
+	let isAdmin = false;
 	try {
-		await repo.createAccount(c.env.DB, {
-			id,
-			username,
-			passwordHash: await hashPassword(password, config.pbkdf2Iterations),
-			// The first account bootstraps the deployment and administers it.
-			isAdmin: accountCount === 0,
-			createdAt: Date.now(),
-		});
-	} catch {
+		if (accountCount === 0) {
+			// Claiming the bootstrap role is one atomic INSERT. A second signup that
+			// observed the same empty database must not become an administrator too.
+			isAdmin = await repo.createFirstAccount(c.env.DB, {
+				id,
+				username,
+				passwordHash,
+				createdAt: Date.now(),
+			});
+		}
+		if (!isAdmin) {
+			// The first-account check can lose a race after the initial count. Re-read
+			// the state before allowing a concurrent request through signup gating.
+			const currentCount = await repo.countAccounts(c.env.DB);
+			if (!signupAllowed(c.env, currentCount)) {
+				throw new HttpError(403, 'signup_disabled', 'Account creation is disabled on this deployment.');
+			}
+			await repo.createAccount(c.env.DB, {
+				id,
+				username,
+				passwordHash,
+				isAdmin: false,
+				createdAt: Date.now(),
+			});
+		}
+	} catch (error) {
+		if (error instanceof HttpError) throw error;
 		// Unique index race between the check above and the insert.
 		throw new HttpError(409, 'username_taken', 'That username is already taken.');
 	}
@@ -69,7 +89,7 @@ auth.post('/signup', async (c) => {
 	return json({ ok: true, apiVersion: API_VERSION, data: { account: accountView(account) } }, { headers: { 'set-cookie': cookie } });
 });
 
-auth.post('/login', async (c) => {
+auth.post('/login', requireSameOrigin, async (c) => {
 	const body = await readJson(c.req.raw);
 	const username = requiredString(body, 'username', { min: 1, max: 64 });
 	const password = requiredString(body, 'password', { min: 1, max: 200, trim: false });
@@ -85,6 +105,13 @@ auth.post('/login', async (c) => {
 		throw new HttpError(401, 'invalid_credentials', 'Incorrect username or password.');
 	}
 
+	if (account.disabledAt !== null) {
+		// Preserve roughly the same work as a real verification without
+		// incrementing a disabled account's brute-force counters.
+		await hashPassword(password, config.pbkdf2Iterations);
+		throw new HttpError(403, 'account_disabled', 'This account is disabled.');
+	}
+
 	if (account.lockedUntil !== null && account.lockedUntil > now) {
 		const seconds = Math.ceil((account.lockedUntil - now) / 1000);
 		throw new HttpError(429, 'account_locked', `Too many failed attempts. Try again in ${seconds}s.`);
@@ -95,10 +122,6 @@ auth.post('/login', async (c) => {
 		throw new HttpError(401, 'invalid_credentials', 'Incorrect username or password.');
 	}
 
-	if (account.disabledAt !== null) {
-		throw new HttpError(403, 'account_disabled', 'This account is disabled.');
-	}
-
 	await repo.clearFailedLogins(c.env.DB, account.id);
 	const cookie = await issueSession(c.env, account.id, c.req.header('user-agent') ?? null);
 	c.executionCtx.waitUntil(repo.purgeExpiredSessions(c.env.DB, now));
@@ -106,7 +129,7 @@ auth.post('/login', async (c) => {
 	return json({ ok: true, apiVersion: API_VERSION, data: { account: accountView(account) } }, { headers: { 'set-cookie': cookie } });
 });
 
-auth.post('/logout', requireSession, async (c) => {
+auth.post('/logout', requireSession, requireSameOrigin, async (c) => {
 	await repo.deleteSessionByTokenHash(c.env.DB, c.get('session').session.tokenHash);
 	return json({ ok: true, data: { signedOut: true } }, { headers: { 'set-cookie': clearSessionCookieHeader() } });
 });

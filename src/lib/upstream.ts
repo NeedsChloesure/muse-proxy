@@ -77,6 +77,8 @@ export interface FetchUpstreamOptions {
 	 * otherwise answer every hop with a 401.
 	 */
 	dropAuthorizationOnRedirect?: boolean;
+	/** Absolute wall-clock deadline for callers spanning multiple attempts. */
+	deadlineAt?: number;
 	/** Wall-clock budget for the whole exchange, in milliseconds. */
 	timeoutMs?: number;
 }
@@ -89,6 +91,7 @@ export interface FetchUpstreamOptions {
  * never travel off-origin.
  */
 export async function fetchUpstream(options: FetchUpstreamOptions): Promise<Response> {
+	const deadline = options.deadlineAt ?? Date.now() + (options.timeoutMs ?? 30_000);
 	const maxRedirects = options.followRedirects === false ? 0 : options.maxRedirects ?? 3;
 	let url = options.url;
 	let method = options.method;
@@ -97,13 +100,23 @@ export async function fetchUpstream(options: FetchUpstreamOptions): Promise<Resp
 	let redirects = 0;
 
 	for (;;) {
-		const response = await fetch(url.toString(), {
-			method,
-			headers,
-			body: body === null ? undefined : body,
-			redirect: 'manual',
-			signal: AbortSignal.timeout(options.timeoutMs ?? 30_000),
-		});
+		const remaining = deadline - Date.now();
+		if (remaining <= 0) throw new HttpError(504, 'upstream_timeout', 'The upstream exchange exceeded its time limit.');
+		let response: Response;
+		try {
+			response = await fetch(url.toString(), {
+				method,
+				headers,
+				body: body === null ? undefined : body,
+				redirect: 'manual',
+				signal: AbortSignal.timeout(remaining),
+			});
+		} catch (error) {
+			if (Date.now() >= deadline) {
+				throw new HttpError(504, 'upstream_timeout', 'The upstream exchange exceeded its time limit.');
+			}
+			throw error;
+		}
 
 		if (response.status < 300 || response.status >= 400) {
 			recordTrace(options.trace, url, method, redirects);

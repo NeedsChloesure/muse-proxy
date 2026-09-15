@@ -96,6 +96,20 @@ export async function createAccount(
 	]);
 }
 
+export async function createFirstAccount(
+	db: D1Database,
+	input: { id: string; username: string; passwordHash: string; createdAt: number },
+): Promise<boolean> {
+	const result = await db
+		.prepare(
+			`INSERT INTO accounts (id, username, password_hash, is_admin, created_at, disabled_at)
+			 SELECT ?, ?, ?, 1, ?, NULL
+			 WHERE NOT EXISTS (SELECT 1 FROM accounts)`,
+		)
+		.bind(input.id, input.username, input.passwordHash, input.createdAt)
+		.run();
+	return result.meta.changes === 1;
+}
 export async function setAccountPassword(db: D1Database, id: string, passwordHash: string): Promise<void> {
 	await run(db, 'UPDATE accounts SET password_hash = ? WHERE id = ?', [passwordHash, id]);
 }
@@ -277,6 +291,7 @@ export async function updateConnection(
 		configJson?: string;
 		status?: string;
 		lastError?: string | null;
+		authType?: string;
 	},
 	now: number,
 ): Promise<void> {
@@ -301,6 +316,10 @@ export async function updateConnection(
 	if (changes.secretHint !== undefined) {
 		sets.push('secret_hint = ?');
 		params.push(changes.secretHint);
+	}
+	if (changes.authType !== undefined) {
+		sets.push('auth_type = ?');
+		params.push(changes.authType);
 	}
 	if (changes.status !== undefined) {
 		sets.push('status = ?');
@@ -520,14 +539,15 @@ export async function replaceGrants(
 	keyId: string,
 	grants: Array<{ id: string; connectionId: string; resourceKey: string; maxAccess: Exclude<Access, 'none'> }>,
 ): Promise<void> {
-	await run(db, 'DELETE FROM api_key_grants WHERE key_id = ?', [keyId]);
-	for (const grant of grants) {
-		await run(
-			db,
-			'INSERT INTO api_key_grants (id, key_id, connection_id, resource_key, max_access) VALUES (?, ?, ?, ?, ?)',
-			[grant.id, keyId, grant.connectionId, grant.resourceKey, grant.maxAccess],
-		);
-	}
+	const statements = [
+		db.prepare('DELETE FROM api_key_grants WHERE key_id = ?').bind(keyId),
+		...grants.map((grant) =>
+			db
+				.prepare('INSERT INTO api_key_grants (id, key_id, connection_id, resource_key, max_access) VALUES (?, ?, ?, ?, ?)')
+				.bind(grant.id, keyId, grant.connectionId, grant.resourceKey, grant.maxAccess),
+		),
+	];
+	await db.batch(statements);
 }
 
 export async function listGrantsForKey(db: D1Database, keyId: string): Promise<ApiKeyGrant[]> {

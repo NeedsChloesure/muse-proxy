@@ -86,6 +86,17 @@ describe('account lifecycle', () => {
 		});
 		expect(duplicate.status).toBe(409);
 	});
+	it('rejects cross-origin signup requests', async () => {
+		const response = await SELF.fetch(url('/api/admin/auth/signup'), {
+			method: 'POST',
+			headers: { origin: 'https://evil.example', 'content-type': 'application/json' },
+			body: JSON.stringify({ username: 'alice', password: 'password12345' }),
+		});
+
+		expect(response.status).toBe(403);
+		const body = (await response.json()) as { error: { code: string } };
+		expect(body.error.code).toBe('bad_origin');
+	});
 });
 
 describe('login', () => {
@@ -168,6 +179,23 @@ describe('login', () => {
 			body: JSON.stringify({ currentPassword: 'nope', newPassword: 'another-long-password' }),
 		});
 		expect(response.status).toBe(401);
+	});
+	it('rejects cross-origin login and logout requests', async () => {
+		const { cookie } = await signUp('alice');
+
+		const loginResponse = await SELF.fetch(url('/api/admin/auth/login'), {
+			method: 'POST',
+			headers: { origin: 'https://evil.example', 'content-type': 'application/json' },
+			body: JSON.stringify({ username: 'alice', password: 'password12345' }),
+		});
+		expect(loginResponse.status).toBe(403);
+
+		const logoutResponse = await SELF.fetch(url('/api/admin/auth/logout'), {
+			method: 'POST',
+			headers: { cookie, origin: 'https://evil.example' },
+		});
+		expect(logoutResponse.status).toBe(403);
+		expect((await SELF.fetch(url('/api/admin/auth/me'), { headers: { cookie } })).status).toBe(200);
 	});
 });
 

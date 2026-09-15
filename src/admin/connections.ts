@@ -15,6 +15,7 @@ import { decryptSecret, encryptSecret, secretHint } from '../lib/crypto';
 import { HttpError, json } from '../lib/http';
 import { toResourceKey } from '../lib/url';
 import { optionalOneOf, optionalString, readJson, requiredOneOf, requiredString } from '../lib/validate';
+import { SUPPORTED_AUTH_TYPES } from '../lib/upstream-auth';
 import { ACCESS_RANK, type Access, type Connection, type ConnectionResource } from '../types';
 import { getProvider, providerTypes } from '../providers/registry';
 import type { AdminProviderCtx, DiscoveredResource, ProviderCredentials, ServiceProvider } from '../providers/types';
@@ -44,7 +45,7 @@ connectionRoutes.post('/', async (c) => {
 	// only ever carry the fields its provider declared.
 	const config = provider.validateConfig(body.config);
 	const credentials = readCredentials(provider, body);
-	const authType = optionalString(body, 'authType', { max: 30 }) ?? provider.defaultAuthType;
+	const authType = validateAuthType(provider, body.authType, provider.defaultAuthType);
 
 	// Enforce the provider's dial policy (SSRF, TLS) before anything is stored.
 	provider.verifyConfig(config, c.env);
@@ -113,6 +114,7 @@ connectionRoutes.patch('/:id', async (c) => {
 	// and the two intentions become `null` (clear) and a non-empty string (set).
 	const username =
 		body.username === undefined ? undefined : optionalString(body, 'username', { max: 200 }) ?? null;
+	const authType = body.authType === undefined ? undefined : validateAuthType(provider, body.authType, provider.defaultAuthType);
 	const secret = optionalString(body, 'secret', { min: 1, max: 500, trim: false });
 	const configTouched = body.config !== undefined;
 	const config = configTouched ? provider.validateConfig(body.config) : parseJson(connection.configJson);
@@ -123,6 +125,7 @@ connectionRoutes.patch('/:id', async (c) => {
 	if (label !== undefined) changes.label = label;
 	if (username !== undefined) changes.username = username;
 	if (configTouched) changes.configJson = JSON.stringify(config);
+	if (authType !== undefined) changes.authType = authType;
 	if (secret !== undefined) {
 		changes.secretCiphertext = await encryptSecret(secret, c.env);
 		changes.secretHint = secretHint(secret);
@@ -130,7 +133,7 @@ connectionRoutes.patch('/:id', async (c) => {
 
 	// Anything that changes what the provider dials or authenticates with
 	// invalidates the previous verification.
-	const recheck = secret !== undefined || username !== undefined || configTouched;
+	const recheck = secret !== undefined || username !== undefined || authType !== undefined || configTouched;
 	if (recheck) {
 		changes.status = 'unverified';
 		changes.lastError = null;
@@ -230,9 +233,13 @@ connectionRoutes.post('/:id/resources', async (c) => {
 	const displayName = optionalString(body, 'displayName', { max: 120 }) ?? resourceKey;
 	const maxAccess = optionalOneOf(body, 'maxAccess', ['none', 'read', 'write'] as const);
 
+	// The row's id is known before the write — upsert keeps an existing row's id
+	// and a new one is generated here — so setting its access needs no second
+	// read to find it again.
 	const existing = await repo.getResourceByKey(c.env.DB, connection.id, resourceKey);
+	const resourceId = existing?.id ?? crypto.randomUUID();
 	await repo.upsertResource(c.env.DB, {
-		id: existing?.id ?? crypto.randomUUID(),
+		id: resourceId,
 		connectionId: connection.id,
 		resourceKey,
 		kind,
@@ -243,8 +250,7 @@ connectionRoutes.post('/:id/resources', async (c) => {
 	});
 
 	if (maxAccess && maxAccess !== 'none') {
-		const stored = await repo.getResourceByKey(c.env.DB, connection.id, resourceKey);
-		if (stored) await repo.setResourceAccess(c.env.DB, stored.id, maxAccess);
+		await repo.setResourceAccess(c.env.DB, resourceId, maxAccess);
 	}
 
 	const refreshed = (await repo.getConnection(c.env.DB, connection.id))!;
@@ -300,6 +306,20 @@ function requireProvider(type: string): ServiceProvider {
 	const provider = getProvider(type);
 	if (!provider) throw new HttpError(500, 'unknown_provider', `The provider '${type}' is no longer available.`);
 	return provider;
+}
+
+/** Validate an authentication type before it can be persisted. */
+function validateAuthType(provider: ServiceProvider, value: unknown, fallback: string): string {
+	const raw = value === undefined || value === null || value === '' ? fallback : value;
+	if (typeof raw !== 'string') {
+		throw new HttpError(400, 'invalid_request', "'authType' must be a string.", { field: 'authType' });
+	}
+	const normalized = raw.trim().toLowerCase();
+	const allowed = provider.authTypes.length > 0 ? provider.authTypes : SUPPORTED_AUTH_TYPES;
+	if (!normalized || !allowed.includes(normalized)) {
+		throw new HttpError(400, 'invalid_request', `'authType' must be one of: ${allowed.join(', ')}.`, { field: 'authType' });
+	}
+	return normalized;
 }
 
 /**

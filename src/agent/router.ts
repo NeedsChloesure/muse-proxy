@@ -37,6 +37,23 @@ import { allProviders, getProvider } from '../providers/registry';
 import { maybeEmitApiVersionNotice } from './notices';
 
 const AGENT_ROOT = '/api/agent';
+const CORS_AGENT_METHODS = [
+	'GET',
+	'HEAD',
+	'POST',
+	'PUT',
+	'DELETE',
+	'OPTIONS',
+	'PROPFIND',
+	'REPORT',
+	'MKCOL',
+	'MKCALENDAR',
+	'PROPPATCH',
+	'MOVE',
+	'COPY',
+	'LOCK',
+	'UNLOCK',
+];
 
 export async function handleAgentRequest(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
 	const config = configFrom(env);
@@ -45,7 +62,7 @@ export async function handleAgentRequest(request: Request, env: Env, ctx: Execut
 	try {
 		if (request.method === 'OPTIONS' && request.headers.get('access-control-request-method')) {
 			if (!corsOrigin) throw new HttpError(403, 'cors_not_allowed', 'This origin is not allowed to call the agent API.');
-			return corsPreflight(request.headers.get('origin') ?? '', corsOrigin, ['GET', 'POST', 'OPTIONS']);
+			return corsPreflight(request.headers.get('origin') ?? '', corsOrigin, CORS_AGENT_METHODS);
 		}
 
 		const response = await routeAgent(request, env, ctx);

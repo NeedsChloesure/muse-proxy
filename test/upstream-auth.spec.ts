@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
+import { fetchWithStoredAuth } from '../src/lib/upstream-auth';
 import { dav } from './dav';
 import {
 	CALENDAR_HOME,
@@ -284,5 +285,53 @@ describe('the gateway authenticates upstream the same way', () => {
 
 		expect(response.status).toBe(413);
 		expect(dav.seen).toHaveLength(0);
+	});
+});
+
+describe('a body that cannot be replayed', () => {
+	it('is refused before the first attempt, not after that attempt consumed it', async () => {
+		// The gateway buffers the body for any password-authenticated connection,
+		// so this is the contract as enforced at the boundary rather than a path a
+		// real caller takes. The point is that it fails before anything is sent:
+		// a stream consumed by attempt one leaves the Digest retry nothing to send.
+		await expect(
+			fetchWithStoredAuth({
+				url: new URL(`${DAV}/calendars/alice/work/`),
+				method: 'PUT',
+				headers: new Headers({ 'content-type': 'text/calendar' }),
+				body: new ReadableStream(),
+				authType: 'basic',
+				credentials: { username: 'alice@example.com', secret: GOOD_PASSWORD },
+				stateKey: 'stream-body-password',
+				allowedOrigin: DAV,
+			}),
+		).rejects.toThrow(/stream/i);
+
+		expect(dav.seen).toHaveLength(0);
+	});
+
+	it('still streams a bearer body, which is never retried', async () => {
+		// Nothing is negotiated on a bearer request, so a stream is safe there and
+		// must keep working: the refusal above is about replayability, not bodies.
+		dav.stub('PUT', '/addressbooks/alice/people/x.vcf', { status: 201 });
+
+		const { response } = await fetchWithStoredAuth({
+			url: new URL(`${DAV}/addressbooks/alice/people/x.vcf`),
+			method: 'PUT',
+			headers: new Headers({ 'content-type': 'text/vcard' }),
+			body: new ReadableStream({
+				start(controller) {
+					controller.enqueue(new TextEncoder().encode('BEGIN:VCARD'));
+					controller.close();
+				},
+			}),
+			authType: 'bearer',
+			credentials: { username: null, secret: 'streamed-token' },
+			stateKey: 'stream-body-bearer',
+			allowedOrigin: DAV,
+		});
+
+		expect(response.status).toBe(201);
+		expect(dav.seen[0].authorization).toBe('Bearer streamed-token');
 	});
 });

@@ -80,6 +80,11 @@ function isPasswordAuth(authType: string): boolean {
 	return type === 'basic' || type === 'digest';
 }
 
+/** True for a body that can be sent only once: a stream, not a buffer or string. */
+function isStreamBody(body: BodyInit | null | undefined): boolean {
+	return body !== null && body !== undefined && typeof (body as { getReader?: unknown }).getReader === 'function';
+}
+
 // -- digest sessions ---------------------------------------------------------
 
 interface DigestSession {
@@ -151,7 +156,11 @@ export interface StoredAuthRequest {
 	stateKey: string;
 	/** Redirects are only followed within this origin. */
 	allowedOrigin: string;
+	/** Redirects are only followed within the allowed origin. */
 	followRedirects?: boolean;
+	/** Absolute wall-clock deadline shared by the initial attempt and any retry. */
+	deadlineAt?: number;
+	/** Wall-clock budget for the entire exchange, in milliseconds. */
 	timeoutMs?: number;
 }
 
@@ -181,6 +190,18 @@ export async function fetchWithStoredAuth(request: StoredAuthRequest): Promise<S
 		throw new HttpError(500, 'unsupported_auth_type', `The stored auth type '${request.authType}' is not supported.`);
 	}
 
+	// A password-based request is the only kind that can be retried (a Digest
+	// challenge costs a second attempt), and a ReadableStream can be read exactly
+	// once. Refuse it before the first attempt rather than after that attempt has
+	// already consumed the stream and left the retry with nothing to send.
+	if (isPasswordAuth(type) && isStreamBody(request.body)) {
+		throw new HttpError(
+			500,
+			'body_not_replayable',
+			'A password-authenticated request may be replayed against a Digest challenge, but the body was supplied as a stream. Buffer it first.',
+		);
+	}
+
 	/**
 	 * `targetBound` says whether the Authorization header is a Digest response,
 	 * which is computed for one specific request-target and cannot be replayed
@@ -188,6 +209,7 @@ export async function fetchWithStoredAuth(request: StoredAuthRequest): Promise<S
 	 * one that negotiated its way there, so it is passed per attempt rather than
 	 * derived from the stored type.
 	 */
+	const deadlineAt = request.deadlineAt ?? Date.now() + (request.timeoutMs ?? 30_000);
 	const send = (url: URL, headers: Headers, targetBound: boolean): Promise<Response> =>
 		fetchUpstream({
 			url,
@@ -197,7 +219,7 @@ export async function fetchWithStoredAuth(request: StoredAuthRequest): Promise<S
 			allowedOrigin: request.allowedOrigin,
 			followRedirects: request.followRedirects,
 			dropAuthorizationOnRedirect: targetBound,
-			timeoutMs: request.timeoutMs,
+			deadlineAt,
 			trace,
 		});
 
@@ -245,13 +267,6 @@ export async function fetchWithStoredAuth(request: StoredAuthRequest): Promise<S
 	return { response: retried, trace };
 
 	async function authorizeDigest(current: DigestSession, url: URL): Promise<string> {
-		if (request.body && typeof (request.body as { getReader?: unknown }).getReader === 'function') {
-			throw new HttpError(
-				500,
-				'body_not_replayable',
-				'A Digest challenge needs the request body again, but it was supplied as a stream. Buffer it first.',
-			);
-		}
 		// Advance the nonce count synchronously so concurrent requests cannot
 		// both claim the same one.
 		const nc = (current.nc += 1);

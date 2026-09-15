@@ -11,9 +11,9 @@ additional services. The usual path is a pull request against `main`:
 Before opening it, these must be green:
 
 ```bash
-npm run typecheck        # Worker and frontend
-npx vitest run           # the whole suite, inside workerd
-npm run build            # required before the routing/asset tests
+npm run typecheck        # generates Wrangler bindings, then checks Worker + frontend
+npm test -- --run        # builds frontend assets, then runs the suite
+npm run build            # builds the SPA into frontend/dist
 ```
 
 Adding a service is a bigger change than a normal one: [Adding a
@@ -166,9 +166,8 @@ Machine-readable documentation lives at `/llms.txt` and
 ## Tests
 
 ```bash
-npx vitest run           # run the whole suite once (npm test for watch mode)
-npm run typecheck        # Worker and frontend
-npm run build            # required before the routing/asset tests
+npm run typecheck        # generates Wrangler bindings, then checks Worker + frontend
+npm test -- --run        # builds frontend assets, then runs the suite
 ```
 
 The suite runs inside workerd through `@cloudflare/vitest-pool-workers`, against

@@ -68,6 +68,15 @@ describe('SPA shell', () => {
 });
 
 describe('API paths never fall through to HTML', () => {
+	it('returns a JSON 404 for the bare /api path', async () => {
+		const response = await SELF.fetch(url('/api'));
+
+		expect(response.status).toBe(404);
+		expect(response.headers.get('content-type')).toContain('application/json');
+		const body = (await response.json()) as { error: { code: string } };
+		expect(body.error.code).toBe('not_found');
+	});
+
 	it('returns a JSON 404 for an unknown /api path', async () => {
 		const response = await SELF.fetch(url('/api/admin/does-not-exist'));
 

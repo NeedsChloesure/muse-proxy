@@ -52,20 +52,29 @@ interface NoticeContent {
 
 /** The keys a notice is addressed to, resolved against live keys only. */
 async function keysForTarget(db: D1Database, input: EmitNoticeInput, target: NoticeTarget): Promise<string[]> {
-	if (target.kind === 'key') return [target.keyId];
-
 	const keys = await listActiveApiKeys(db, input.accountId);
+	const activeKeyIds = new Set(keys.map((key) => key.id));
+	if (target.kind === 'key') return activeKeyIds.has(target.keyId) ? [target.keyId] : [];
 	if (target.kind === 'account') return keys.map((key) => key.id);
 
 	// Connection targeting: every live key holding any grant on the connection,
 	// with a resource_key narrowing the match to that collection or a wildcard.
 	const grants = await listGrantsForAccount(db, input.accountId);
-	const holders = new Set(grants.filter((grant) => grant.connectionId === target.connectionId).map((grant) => grant.keyId));
+	const holders = new Set(
+		grants
+			.filter((grant) => grant.connectionId === target.connectionId && activeKeyIds.has(grant.keyId))
+			.map((grant) => grant.keyId),
+	);
 	if (target.resourceKey === null || target.resourceKey === undefined) return [...holders];
 
 	const exact = new Set(
 		grants
-			.filter((grant) => grant.connectionId === target.connectionId && (grant.resourceKey === target.resourceKey || grant.resourceKey === '*'))
+			.filter(
+				(grant) =>
+					grant.connectionId === target.connectionId &&
+					activeKeyIds.has(grant.keyId) &&
+					(grant.resourceKey === target.resourceKey || grant.resourceKey === '*'),
+			)
 			.map((grant) => grant.keyId),
 	);
 	return [...exact];

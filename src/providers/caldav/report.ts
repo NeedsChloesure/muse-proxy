@@ -40,7 +40,7 @@
  * bodies, and sabre/dav's own responses, commonly are).
  */
 
-import { XMLParser } from 'fast-xml-parser';
+import { XMLParser, XMLValidator } from 'fast-xml-parser';
 
 const parser = new XMLParser({
 	removeNSPrefix: true,
@@ -56,6 +56,12 @@ const parser = new XMLParser({
  * not be parsed or an href could not be read. Null is a refusal, never a skip.
  */
 export function extractReportHrefs(xml: string): string[] | null {
+	const source = xml.trim();
+	// fast-xml-parser accepts plain text as a scalar (and an empty string as an
+	// empty object). Neither is a REPORT document that the upstream will parse.
+	if (!source.startsWith('<')) return null;
+	if (XMLValidator.validate(source) !== true) return null;
+
 	let doc: unknown;
 	try {
 		doc = parser.parse(xml);
@@ -98,11 +104,11 @@ function collect(node: unknown, found: string[]): boolean {
  */
 function collectText(value: unknown, found: string[]): boolean {
 	if (Array.isArray(value)) {
-		let ok = false;
+		if (value.length === 0) return false;
 		for (const item of value) {
-			if (collectText(item, found)) ok = true;
+			if (!collectText(item, found)) return false;
 		}
-		return ok;
+		return true;
 	}
 	if (typeof value === 'string') {
 		if (!value.trim()) return false;

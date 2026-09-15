@@ -14,6 +14,8 @@ You may add additional services by [submitting a pull request](./CONTRIBUTING.md
 ```bash
 npm install
 npm --prefix frontend install
+npm run typecheck        # generates Wrangler bindings, then checks Worker + frontend
+npm test -- --run        # builds frontend assets, then runs the suite
 npm run build            # builds the SPA into frontend/dist
 ```
 
@@ -89,8 +91,9 @@ Agents send the apikeys as `Authorization: Bearer muse_...`. Machine-readable do
   connection from reaching `169.254.169.254` and friends.
 - **`ALLOW_INSECURE_HTTP`** — permits plain `http://` upstreams. Off by default,
   because upstream credentials would otherwise travel in the clear.
-- **`AGENT_CORS_ORIGIN`** — a single optional origin allowed to call
-  `/api/agent` from a browser. Empty disables CORS entirely.
+- **`AGENT_CORS_ORIGIN`** — one or more comma-separated origins allowed to call
+  `/api/agent` from a browser. Preflight advertises the full supported DAV method
+  set. Empty disables CORS entirely.
 - **`CREDENTIAL_ENCRYPTION_KEY`** — AES-GCM key for credentials at rest. Losing
   it means re-entering every stored credential.
 

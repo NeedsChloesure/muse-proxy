@@ -154,13 +154,24 @@ describe('challenge parsing', () => {
 		expect(challenge?.stale).toBe(true);
 	});
 
-	it('records userhash and charset rather than silently ignoring them', () => {
-		const { challenge } = selectDigestChallenge(
-			headersWith(`${digestChallenge('MD5')}, charset=UTF-8, userhash=true`),
-		);
+	it('reads a charset, which RFC 7616 fixes at UTF-8', () => {
+		const { challenge } = selectDigestChallenge(headersWith(`${digestChallenge('MD5')}, charset=UTF-8`));
 
-		expect(challenge?.userhash).toBe(true);
 		expect(challenge?.charset).toBe('UTF-8');
+	});
+
+	it('refuses userhash rather than answering with an unhashed username', async () => {
+		// userhash=yes hashes the username into HA1 (RFC 7616 section 3.4.2), so a
+		// response built from the raw username is one the server cannot verify.
+		// It is skipped like any other capability we lack, and named, so the
+		// failure is actionable rather than an unexplained 401.
+		const selection = selectDigestChallenge(headersWith(`${digestChallenge('MD5')}, userhash=true`));
+
+		expect(selection.challenge).toBeNull();
+		expect(selection.rejected.join(' ')).toContain('userhash');
+
+		// And it is refused at computation time too, not silently answered.
+		await expect(authorize({ ...qualityChallenge(['auth']), userhash: true })).rejects.toThrow(/userhash/);
 	});
 
 	it('ignores a bearer token without swallowing the next challenge', () => {

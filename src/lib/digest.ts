@@ -114,6 +114,10 @@ export function selectDigestChallenge(headers: Headers): DigestSelection {
 			rejected.push(`Digest (${digest.algorithm}): qop=${digest.qop.join('/')} is not supported`);
 			continue;
 		}
+		if (digest.userhash) {
+			rejected.push(`Digest (${digest.algorithm}): userhash is not supported`);
+			continue;
+		}
 		candidate = digest;
 	}
 
@@ -177,6 +181,16 @@ export async function digestAuthorization(
 	const quality = selectQuality(challenge);
 	if (quality === null) {
 		throw new HttpError(500, 'unsupported_digest_qop', `The server asked for Digest with qop=${challenge.qop.join(',')}, which this gateway cannot compute.`);
+	}
+	// userhash=yes hashes the username into HA1 (RFC 7616 §3.4.2). Sending the
+	// raw username would produce a response the server cannot verify, which is
+	// the failure mode this refusal exists to avoid.
+	if (challenge.userhash) {
+		throw new HttpError(
+			500,
+			'unsupported_digest_userhash',
+			'The server asked for Digest with userhash=yes, which this gateway cannot compute: the username is not hashed into HA1.',
+		);
 	}
 
 	const h = (data: string) => hashHex(algorithm.hash, data);

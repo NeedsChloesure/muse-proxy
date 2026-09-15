@@ -51,8 +51,8 @@ const GATEWAY_OPERATION = {
 		403: ACCESS_RESPONSE,
 		502: { description: 'The upstream server could not be reached.' },
 	},
-	'x-muse-required-access': 'read for GET/HEAD/PROPFIND/REPORT; write for PUT/POST/DELETE/MKCOL/MKCALENDAR/PROPPATCH/MOVE/COPY',
-	'x-muse-dav-methods': ['OPTIONS', 'GET', 'HEAD', 'PROPFIND', 'REPORT', 'PUT', 'POST', 'DELETE', 'MKCOL', 'MKCALENDAR', 'PROPPATCH', 'MOVE', 'COPY'],
+	'x-muse-required-access': 'read for GET/HEAD/PROPFIND/REPORT; write for PUT/POST/DELETE/MKCOL/MKCALENDAR/PROPPATCH/MOVE/COPY/LOCK/UNLOCK',
+	'x-muse-dav-methods': ['OPTIONS', 'GET', 'HEAD', 'PROPFIND', 'REPORT', 'PUT', 'POST', 'DELETE', 'MKCOL', 'MKCALENDAR', 'PROPPATCH', 'MOVE', 'COPY', 'LOCK', 'UNLOCK'],
 };
 
 export const caldavOpenApi: OpenApiFragment = {

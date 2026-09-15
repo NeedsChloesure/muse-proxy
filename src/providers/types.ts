@@ -110,7 +110,8 @@ export interface ServiceProvider {
 	readonly docsPath: string;
 	readonly openapiPath: string;
 	readonly defaultAuthType: string;
-	/** Config fields the console renders, and the shape validateConfig returns. */
+	/** Authentication types this provider can pass to the shared upstream strategy. */
+	readonly authTypes: readonly string[];
 	readonly fields: readonly ProviderField[];
 	/** Labels for the stored credential pair. */
 	readonly credentials: ProviderCredentialFields;
