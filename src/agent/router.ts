@@ -143,7 +143,7 @@ async function routeAgent(request: Request, env: Env, ctx: ExecutionContext): Pr
 			requireAccess({ scope: route.scope, grants: route.grants, decision, required, message }),
 	});
 
-	ctx.waitUntil(touchApiKey(env.DB, identity.key.id, Date.now()));
+	ctx.waitUntil(touchApiKey(env.DB, identity.key.id));
 
 	return withAgentHeaders(result.response, { pendingNotices: pending });
 }
@@ -265,7 +265,7 @@ async function acknowledgeNotices(request: Request, env: Env, ctx: ExecutionCont
 
 	await deleteAgentNotices(env.DB, identity.key.id, ids);
 	const remaining = await countPendingNoticesForKey(env.DB, identity.key.id);
-	ctx.waitUntil(touchApiKey(env.DB, identity.key.id, Date.now()));
+	ctx.waitUntil(touchApiKey(env.DB, identity.key.id));
 	return agentJson({ acknowledged: ids.length, pending: remaining }, []);
 }
 

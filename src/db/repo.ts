@@ -509,8 +509,10 @@ export async function deleteApiKey(db: D1Database, id: string): Promise<void> {
 	await run(db, 'DELETE FROM api_keys WHERE id = ?', [id]);
 }
 
-export async function touchApiKey(db: D1Database, id: string, now: number): Promise<void> {
-	await run(db, 'UPDATE api_keys SET last_used_at = ? WHERE id = ?', [now, id]);
+export async function touchApiKey(db: D1Database, id: string): Promise<void> {
+	const now = Date.now()
+	const oneDayAgo = now - 86_400_000
+	await run(db, 'UPDATE api_keys SET last_used_at = ? WHERE id = ? AND (last_used_at IS NULL OR last_used_at <= ?)', [now, id, oneDayAgo]);
 }
 
 // -- grants ------------------------------------------------------------------
