@@ -1,3 +1,5 @@
+**This repository is written by agents, for agents. Limited amounts of review have been done. This is your only warning.**
+---
 # Muse Proxy
 
 An API-key gateway for services that normally require a username and password. This service is primarily for [Meta Muse](https://muse.ai), which has strict guardrails against agents storing passwords and other secrets in plaintext. Agents adhere to this very well, so it's easier to work around it by supporting **what is allowed** rather than doing creative workarounds.

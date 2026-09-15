@@ -52,6 +52,15 @@ describe('resolveDavPath', () => {
 		expect(resolveDavPath('/calendars/alice/', keys)).toMatchObject({ resourceKey: null, connectionScope: true });
 	});
 
+	it('ignores a collection key that normalizes to nothing, so the root stays an enumeration', () => {
+		// A row keyed '' or '/' names no collection. If it were matched, the
+		// connection root would resolve to that one collection and be authorized
+		// by its narrow grant instead of the blanket authority enumeration needs.
+		for (const malformed of ['', '/', '//']) {
+			expect(resolveDavPath('/', [...keys, malformed])).toMatchObject({ resourceKey: null, connectionScope: true });
+		}
+	});
+
 	it('explains an unrelated path rather than calling it an enumeration', () => {
 		const resolution = resolveDavPath('/principals/bob/', keys);
 		expect(resolution).toMatchObject({ resourceKey: null, connectionScope: false });
@@ -318,6 +327,31 @@ describe('enumeration is refused, not filtered', () => {
 		expect(body.error.details.reason).toContain('wildcard');
 		expect([...body.error.details.permittedResources].sort()).toEqual(['addressbooks/alice/people', 'calendars/alice/work']);
 		// Nothing reached upstream, so no collection names or etags leaked.
+		expect(dav.seen).toEqual([]);
+	});
+
+	it('refuses a root PROPFIND even when a malformed empty collection key is granted', async () => {
+		// The same request as above, but with a scope row whose key normalizes to
+		// nothing and a key granted exactly that. Reaching upstream here would
+		// mean a row no writer can create had narrowed the root's check from
+		// blanket authority to a single collection's grant.
+		await repo.upsertResource(env.DB, {
+			id: 'res-empty',
+			connectionId: seed.connectionId,
+			resourceKey: '',
+			kind: 'calendar',
+			displayName: 'malformed',
+			metaJson: '{}',
+			now: Date.now(),
+		});
+		await repo.setResourceAccess(env.DB, 'res-empty', 'write');
+		await repo.replaceGrants(env.DB, 'key-1', [{ id: 'g-empty', connectionId: seed.connectionId, resourceKey: '', maxAccess: 'write' }]);
+
+		const response = await gatewayFetch(seed.connectionId, '/', seed.token, { method: 'PROPFIND', headers: { depth: '1' } });
+
+		expect(response.status).toBe(403);
+		const body = (await response.json()) as { error: { details: { reason: string } } };
+		expect(body.error.details.reason).toContain('wildcard');
 		expect(dav.seen).toEqual([]);
 	});
 

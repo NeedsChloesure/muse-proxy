@@ -80,7 +80,11 @@ auth.post('/signup', requireSameOrigin, async (c) => {
 		}
 	} catch (error) {
 		if (error instanceof HttpError) throw error;
-		// Unique index race between the check above and the insert.
+		// Only a unique-index violation is the username race the check above
+		// cannot prevent. Any other write failure must surface as itself: blamed
+		// on the username, it sends the user off renaming a name that was never
+		// the problem while the real fault goes unreported.
+		if (!isUniqueViolation(error)) throw error;
 		throw new HttpError(409, 'username_taken', 'That username is already taken.');
 	}
 
@@ -264,6 +268,16 @@ accounts.patch('/:id', async (c) => {
 adminRoutes.route('/accounts', accounts);
 
 // -- helpers -----------------------------------------------------------------
+
+/**
+ * D1 surfaces a unique-index violation as a SQLITE_CONSTRAINT write error, so
+ * the message is the only signal available to tell it from a write that failed
+ * for its own reason.
+ */
+function isUniqueViolation(error: unknown): boolean {
+	const message = error instanceof Error ? error.message : String(error);
+	return /unique constraint failed|sqlite_constraint/i.test(message);
+}
 
 async function issueSession(env: Env, accountId: string, userAgent: string | null): Promise<string> {
 	const config = configFrom(env);

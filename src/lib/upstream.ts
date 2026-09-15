@@ -164,6 +164,15 @@ export async function fetchUpstream(options: FetchUpstreamOptions): Promise<Resp
 		}
 		if (dropAuthorization) headers.delete('authorization');
 
+		// This hop is being re-issued, so the 3xx response is discarded. Release
+		// its body explicitly: an abandoned stream keeps the upstream connection
+		// open until it happens to be collected.
+		try {
+			await response.body?.cancel();
+		} catch {
+			// Already consumed or locked; nothing left to release.
+		}
+
 		url = next;
 		redirects++;
 	}

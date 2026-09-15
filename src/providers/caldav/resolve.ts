@@ -19,7 +19,12 @@
 import { normalizeResourceKey, type Resolution } from '../../lib/access';
 
 export function resolveDavPath(path: string, resourceKeys: string[]): Resolution {
-	const keys = resourceKeys.map(normalizeResourceKey);
+	// A key that normalizes to nothing ('', '/', '//') names no collection, so it
+	// is dropped rather than matched: left in, it would match the connection root
+	// and attribute an enumeration to a single collection's grant, which is the
+	// narrow check. The root must keep requiring blanket authority even if a
+	// malformed row ever reaches the scope (both writers reject one today).
+	const keys = resourceKeys.map(normalizeResourceKey).filter((key) => key.length > 0);
 	const target = normalizeResourceKey(path);
 
 	let matched: string | null = null;
