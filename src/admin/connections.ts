@@ -108,7 +108,11 @@ connectionRoutes.patch('/:id', async (c) => {
 	const db = c.env.DB;
 
 	const label = optionalString(body, 'label', { max: 80 });
-	const username = optionalString(body, 'username', { max: 200 });
+	// An explicitly empty username clears it. `optionalString` cannot express
+	// that — it reports '' as "not supplied" — so the field's presence decides,
+	// and the two intentions become `null` (clear) and a non-empty string (set).
+	const username =
+		body.username === undefined ? undefined : optionalString(body, 'username', { max: 200 }) ?? null;
 	const secret = optionalString(body, 'secret', { min: 1, max: 500, trim: false });
 	const configTouched = body.config !== undefined;
 	const config = configTouched ? provider.validateConfig(body.config) : parseJson(connection.configJson);

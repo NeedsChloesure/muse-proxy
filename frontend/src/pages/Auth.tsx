@@ -12,7 +12,12 @@ export function AuthScreen({ meta, onAuthed }: { meta: Meta | null; onAuthed: (a
 	const firstRun = meta !== null && !meta.hasAccounts;
 	const signupEnabled = meta?.signupEnabled ?? true;
 
-	const [mode, setMode] = useState<'login' | 'signup'>(firstRun ? 'signup' : 'login');
+	// Null until the visitor picks a mode themselves. Until then the mode is
+	// derived, so the first account is offered as soon as the metadata arrives
+	// instead of racing it: /meta and /me resolve in parallel, and a fixed
+	// initial state would show "Sign in" on a deployment with no accounts.
+	const [chosenMode, setChosenMode] = useState<'login' | 'signup' | null>(null);
+	const mode = chosenMode ?? (firstRun ? 'signup' : 'login');
 	const [username, setUsername] = useState('');
 	const [password, setPassword] = useState('');
 	const [error, setError] = useState<string | null>(null);
@@ -76,7 +81,7 @@ export function AuthScreen({ meta, onAuthed }: { meta: Meta | null; onAuthed: (a
 							type="button"
 							className="link"
 							onClick={() => {
-								setMode(mode === 'login' ? 'signup' : 'login');
+								setChosenMode(mode === 'login' ? 'signup' : 'login');
 								setError(null);
 							}}
 						>

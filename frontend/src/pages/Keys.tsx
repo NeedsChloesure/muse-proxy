@@ -7,14 +7,19 @@ import { summarizeGrants } from '../lib/grants';
 import { usageDisplay } from '../lib/keyActivity';
 
 export function KeysPage() {
-	const connections = useAsync(() => api.connections.list(), []);
-	const keys = useAsync(() => api.keys.list(), []);
 	const [reloadKey, setReloadKey] = useState(0);
+	const connections = useAsync(() => api.connections.list(), []);
+	// `reloadKey` is a real dependency, not just a nudge to re-render: without it
+	// the list is fetched once on mount, so a key that was just minted never
+	// appears and one that was just deleted lingers until a page reload.
+	const keys = useAsync(() => api.keys.list(), [reloadKey]);
 
 	const [name, setName] = useState('');
 	const [expiresInDays, setExpiresInDays] = useState('');
 	const [grants, setGrants] = useState<Grant[]>([]);
-	const [token, setToken] = useState<string | null>(null);
+	// The token and the mount it was granted on are captured together, because
+	// the create form is cleared the moment the key exists.
+	const [reveal, setReveal] = useState<{ token: string; mountPath?: string } | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [busy, setBusy] = useState(false);
 
@@ -45,13 +50,16 @@ export function KeysPage() {
 		event.preventDefault();
 		setBusy(true);
 		setError(null);
+		// Read before the form is reset below, so the reveal can point the agent
+		// at the connection this key was just granted.
+		const mountPath = grants.length > 0 ? mountFor(connectionList, grants[0].connectionId) : undefined;
 		try {
 			const result = await api.keys.create({
 				name,
 				expiresInDays: expiresInDays ? Number(expiresInDays) : undefined,
 				grants,
 			});
-			setToken(result.token);
+			setReveal({ token: result.token, mountPath });
 			setName('');
 			setExpiresInDays('');
 			setGrants([]);
@@ -63,8 +71,6 @@ export function KeysPage() {
 		}
 	}
 
-	const tokenMount = grants.length > 0 ? mountFor(connectionList, grants[0].connectionId) : undefined;
-
 	return (
 		<>
 			<h1>API keys</h1>
@@ -75,12 +81,12 @@ export function KeysPage() {
 
 			<Alert>{error}</Alert>
 
-			{token ? (
+			{reveal ? (
 				<div className="panel">
 					<h2>New key</h2>
-					<TokenReveal token={token} mountPath={tokenMount} />
+					<TokenReveal token={reveal.token} mountPath={reveal.mountPath} />
 					<div className="row" style={{ marginTop: '0.75rem' }}>
-						<button onClick={() => setToken(null)}>Done</button>
+						<button onClick={() => setReveal(null)}>Done</button>
 					</div>
 				</div>
 			) : null}
@@ -178,14 +184,17 @@ export function KeyDetailPage() {
 	const loaded = useAsync(() => api.keys.get(id), [id, reloadKey]);
 	const connections = useAsync(() => api.connections.list(), []);
 
-	const [grants, setGrants] = useState<Grant[] | null>(null);
+	const [edits, setEdits] = useState<{ id: string; grants: Grant[] } | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [notice, setNotice] = useState<string | null>(null);
 	const [busy, setBusy] = useState(false);
 
 	const key = loaded.data?.key ?? null;
 	const connectionList = connections.data?.connections ?? [];
-	const current = grants ?? loaded.data?.grants ?? [];
+	// Edits are tagged with the key they were made against, so navigating from
+	// one key to another can never show — or save — the previous key's grants.
+	const dirty = edits !== null && edits.id === id;
+	const current = dirty ? edits.grants : loaded.data?.grants ?? [];
 
 	if (loaded.loading) return <p className="muted">Loading…</p>;
 	if (!key) {
@@ -257,23 +266,23 @@ export function KeyDetailPage() {
 				<p className="hint">
 					Narrowing a key notifies it, so the agent can adjust its expectations and tell its human.
 				</p>
-				<ScopeMatrix connections={connectionList} grants={current} onChange={setGrants} />
+				<ScopeMatrix connections={connectionList} grants={current} onChange={(next) => setEdits({ id, grants: next })} />
 				<div className="row" style={{ marginTop: '1rem' }}>
 					<button
 						className="primary"
-						disabled={busy || grants === null}
+						disabled={busy || !dirty}
 						onClick={() =>
 							void run(async () => {
 								await api.keys.setGrants(key.id, current);
-								setGrants(null);
+								setEdits(null);
 								return { message: 'Grants updated.' };
 							})
 						}
 					>
 						Save grants
 					</button>
-					{grants !== null ? (
-						<button disabled={busy} onClick={() => setGrants(null)}>
+					{dirty ? (
+						<button disabled={busy} onClick={() => setEdits(null)}>
 							Discard changes
 						</button>
 					) : null}

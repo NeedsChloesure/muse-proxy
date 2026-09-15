@@ -222,7 +222,17 @@ export function ConnectionDetail() {
 					onSubmit={(event: FormEvent) => {
 						event.preventDefault();							const payload: Record<string, unknown> = {};
 							if (editLabel !== null) payload.label = editLabel;
-							if (editConfig !== null) payload.config = editConfig;
+							if (editConfig !== null) {
+								// Send every declared field, not only the one that was edited. The
+								// server validates a config as a whole, so a partial object would
+								// drop — or silently default — the fields the user never touched.
+								payload.config = Object.fromEntries(
+									fields.map((field) => [
+										field.name,
+										editConfig[field.name] ?? String(connection.config[field.name] ?? ''),
+									]),
+								);
+							}
 							if (editUsername !== null) payload.username = editUsername;
 							if (editSecret) payload.secret = editSecret;
 							void run(async () => {

@@ -78,8 +78,11 @@ GET /api/agent/notices
 }
 
 function AccountsPanel() {
-	const accounts = useAsync(() => api.accounts.list(), []);
 	const [reloadKey, setReloadKey] = useState(0);
+	// The dependency is what makes the list reload after a mutation. Without it
+	// the fetch happens once on mount, so an account that was just added or
+	// toggled never appears until the page is reloaded.
+	const accounts = useAsync(() => api.accounts.list(), [reloadKey]);
 	const [username, setUsername] = useState('');
 	const [password, setPassword] = useState('');
 	const [isAdmin, setIsAdmin] = useState(false);
@@ -205,7 +208,6 @@ function AccountsPanel() {
 					</button>
 				</div>
 			</form>
-			<span style={{ display: 'none' }}>{reloadKey}</span>
 		</div>
 	);
 }
