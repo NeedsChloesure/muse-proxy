@@ -18,6 +18,7 @@ import { API_VERSION, type Account } from '../types';
 import { allProviders } from '../providers/registry';
 import { connectionRoutes } from './connections';
 import { keyRoutes } from './keys';
+import { mailRoutes } from './mail';
 
 const MAX_FAILED_LOGINS = 10;
 const LOCKOUT_MS = 15 * 60 * 1000;
@@ -191,6 +192,9 @@ adminRoutes.get('/meta', async (c) => {
 				docsUrl: provider.docsPath,
 				fields: provider.fields,
 				credentials: provider.credentials,
+				// Local services (mail) are managed from their own console page and
+				// are not offered by the generic add-connection form.
+				local: provider.local ?? false,
 			})),
 		},
 	});
@@ -200,6 +204,7 @@ adminRoutes.get('/meta', async (c) => {
 
 adminRoutes.route('/connections', connectionRoutes);
 adminRoutes.route('/keys', keyRoutes);
+adminRoutes.route('/mail', mailRoutes);
 
 const accounts = new Hono<AppBindings>();
 accounts.use('*', requireSession, requireSameOrigin, requireAdmin);

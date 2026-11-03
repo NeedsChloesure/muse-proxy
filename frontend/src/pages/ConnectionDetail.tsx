@@ -67,6 +67,33 @@ export function ConnectionDetail() {
 	const enabled = connection.resources.filter((resource) => resource.maxAccess !== 'none').length;
 	const mount = `/api/agent/${connection.provider}/${connection.id}/`;
 
+	// Mail has no upstream credential to test or rotate. Its connection exists so
+	// mailbox resources can be granted, and the Mail page owns everything else.
+	if (connection.provider === 'mail') {
+		return (
+			<>
+				<Link to="/" className="muted">
+					← Connections
+				</Link>
+				<h1 style={{ marginTop: '0.5rem' }}>
+					{connection.label} <StatusPill status={connection.status} />
+				</h1>
+				<Alert kind="warn">
+					Mail is hosted by this Worker, so there are no upstream credentials to verify or rotate.
+				</Alert>
+				<div className="panel">
+					<p>
+						{enabled} of {connection.resources.length} mailbox(es) are enabled for agents. Mailboxes, quotas and per-mailbox access
+						live on the Mail page.
+					</p>
+					<Link to="/mail">
+						<button className="primary">Open Mail</button>
+					</Link>
+				</div>
+			</>
+		);
+	}
+
 	return (
 		<>
 			<Link to="/" className="muted">

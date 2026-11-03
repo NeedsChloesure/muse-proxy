@@ -7,9 +7,10 @@
  */
 
 import { caldavProvider } from './caldav/provider';
+import { mailProvider } from './mail/provider';
 import type { ServiceProvider } from './types';
 
-const PROVIDERS: ServiceProvider[] = [caldavProvider];
+const PROVIDERS: ServiceProvider[] = [caldavProvider, mailProvider];
 
 const BY_TYPE = new Map(PROVIDERS.map((provider) => [provider.type, provider]));
 

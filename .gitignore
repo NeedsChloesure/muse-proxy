@@ -170,3 +170,6 @@ dist
 .env*
 !.env.example
 .wrangler/
+
+# Temporary mail migration config
+.wrangler.import.*.jsonc

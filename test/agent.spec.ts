@@ -33,7 +33,7 @@ describe('service catalog', () => {
 			data: { services: Array<{ type: string; docsUrl: string }>; authenticated: boolean; connections?: unknown };
 		};
 		expect(body.data.authenticated).toBe(false);
-		expect(body.data.services.map((service) => service.type)).toEqual(['caldav']);
+		expect(body.data.services.map((service) => service.type)).toEqual(['caldav', 'mail']);
 		expect(body.data.services[0].docsUrl).toBe('/docs/agent/caldav.html');
 		expect(body.data.connections).toBeUndefined();
 	});

@@ -110,6 +110,18 @@ export interface ServiceProvider {
 	readonly docsPath: string;
 	readonly openapiPath: string;
 	readonly defaultAuthType: string;
+	/**
+	 * Hosted by this Worker rather than proxied to an upstream service. A local
+	 * provider has no credentials to store and its connection is created and
+	 * managed by its own console page, not the generic connection form.
+	 */
+	readonly local?: boolean;
+	/**
+	 * False when the provider stores no upstream credential. Defaults to true.
+	 * The connection form, credential validation and provider context all read
+	 * this rather than special-casing a provider name.
+	 */
+	readonly requiresCredentials?: boolean;
 	/** Authentication types this provider can pass to the shared upstream strategy. */
 	readonly authTypes: readonly string[];
 	readonly fields: readonly ProviderField[];

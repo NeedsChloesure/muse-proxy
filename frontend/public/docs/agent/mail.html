@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Muse Proxy — Mail agent API</title>
+		<style>
+			:root { color-scheme: light dark; }
+			body { margin: 0 auto; max-width: 50rem; padding: 2.5rem 1.5rem 5rem;
+				font: 16px/1.65 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+			h1 { font-size: 1.7rem; letter-spacing: -0.01em; margin: 0 0 0.3rem; }
+			h2 { font-size: 1.15rem; margin: 2.2rem 0 0.6rem; }
+			h3 { font-size: 1rem; margin: 1.6rem 0 0.4rem; }
+			code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.87em; }
+			pre { background: rgba(127,127,127,0.12); padding: 0.9rem 1rem; border-radius: 8px; overflow-x: auto; }
+			code { background: rgba(127,127,127,0.12); padding: 0.1rem 0.3rem; border-radius: 4px; }
+			pre code { background: none; padding: 0; }
+			a { color: inherit; }
+			table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin: 0.6rem 0; }
+			th, td { text-align: left; padding: 0.45rem 0.5rem; border-bottom: 1px solid rgba(127,127,127,0.3); vertical-align: top; }
+			th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.7; }
+			.muted { opacity: 0.7; }
+			.note { border-left: 3px solid currentColor; padding: 0.1rem 0 0.1rem 0.9rem; opacity: 0.85; margin: 1rem 0; }
+		</style>
+	</head>
+	<body>
+		<h1>Mail</h1>
+		<p class="muted">Inbound email hosted by Muse Proxy. No IMAP, no SMTP, no outbound sending.</p>
+
+		<div class="note">
+			<p><strong>Reading this as an agent?</strong> Load <a href="/api/agent">/api/agent</a> with your key first. It reports the Mail connection id and every mailbox your key can reach, with the effective access level. Read <a href="/llms.txt">/llms.txt</a> for the shared conventions.</p>
+		</div>
+
+		<h2>Authentication</h2>
+		<pre><code>Authorization: Bearer muse_...</code></pre>
+		<p>Mail is one service in the same gateway as CalDAV. Your key is account-bound and carries grants. Never put it in a query string.</p>
+
+		<h2>What a mailbox is</h2>
+		<p>The account owner has one <strong>Mail</strong> connection. Each mailbox is a resource on it, keyed by its lowercased address. That means access is the same intersection as everywhere else:</p>
+		<table>
+			<thead><tr><th>Layer</th><th>Set by</th><th>Values</th></tr></thead>
+			<tbody>
+				<tr><td>Mailbox ceiling</td><td>The account owner, on the mailbox page</td><td><code>none</code>, <code>read</code>, <code>write</code></td></tr>
+				<tr><td>Key grant</td><td>The account owner, per key</td><td>one mailbox address, or <code>*</code> for every mailbox</td></tr>
+			</tbody>
+		</table>
+		<p>A mailbox starts at <code>none</code>. A key with a matching grant still gets nothing until the owner raises the ceiling. A denial is a <code>403</code> with <code>required</code>, <code>effective</code>, <code>resource</code> and <code>permittedResources</code>; read it instead of retrying.</p>
+		<p>A key with no grant on the Mail connection cannot even address it. The catalog shows the connection id:</p>
+		<pre><code>curl -sS -H "Authorization: Bearer $MUSE_KEY" "$MUSE_URL/api/agent"</code></pre>
+
+		<h2>Endpoints</h2>
+		<p>All paths are relative to <code>/api/agent/mail/&lt;connectionId&gt;</code>. Percent-encode the <code>@</code> in an address as <code>%40</code>.</p>
+		<table>
+			<thead><tr><th>Method and path</th><th>Access</th><th>Purpose</th></tr></thead>
+			<tbody>
+				<tr><td><code>GET /</code></td><td>read</td><td>Mailboxes this key can read, plus the connection label.</td></tr>
+				<tr><td><code>GET /mailboxes</code></td><td>read</td><td>The same mailbox list.</td></tr>
+				<tr><td><code>GET /mailboxes/{address}</code></td><td>read</td><td>One mailbox and its usage.</td></tr>
+				<tr><td><code>GET /mailboxes/{address}/messages</code></td><td>read</td><td>Message summaries, newest first.</td></tr>
+				<tr><td><code>GET /mailboxes/{address}/stats</code></td><td>read</td><td>Message, unread and attachment totals.</td></tr>
+				<tr><td><code>POST /mailboxes/{address}/trim</code></td><td>write</td><td>Delete the oldest mail until the mailbox fits its quotas.</td></tr>
+				<tr><td><code>POST /mailboxes/{address}/purge</code></td><td>write</td><td>Delete a range; see below.</td></tr>
+				<tr><td><code>GET /messages/{id}</code></td><td>read</td><td>Bodies, headers, attachment metadata.</td></tr>
+				<tr><td><code>PATCH /messages/{id}</code></td><td>write</td><td><code>{"isRead":true}</code> and/or <code>{"isStarred":true}</code>.</td></tr>
+				<tr><td><code>DELETE /messages/{id}</code></td><td>write</td><td>Delete the message and its attachments.</td></tr>
+				<tr><td><code>GET /messages/{id}/raw</code></td><td>read</td><td>The retained RFC 822 source, when <code>rawAvailable</code>.</td></tr>
+				<tr><td><code>GET /attachments/{id}</code></td><td>read</td><td>Download one attachment.</td></tr>
+			</tbody>
+		</table>
+		<p>Creating, configuring and deleting mailboxes, and minting keys, are owner-only console actions. They are deliberately not exposed to agent keys.</p>
+
+		<h2>Reading mail</h2>
+		<pre><code>curl -sS \
+  -H "Authorization: Bearer $MUSE_KEY" \
+  "$MUSE_URL/api/agent/mail/$CONNECTION/mailboxes/notes%40mail.example.com/messages?limit=20&amp;unread=true"</code></pre>
+		<p>List query parameters: <code>limit</code> 1–200 (default 50), <code>cursor</code>, <code>order=asc|desc</code>, <code>since</code>, <code>before</code>, <code>unread</code>, <code>starred</code>, <code>hasAttachments</code>, and <code>q</code> (case-insensitive substring over subject, sender, preview and text). Follow <code>nextCursor</code> while <code>hasMore</code> is true.</p>
+		<pre><code>curl -sS \
+  -H "Authorization: Bearer $MUSE_KEY" \
+  "$MUSE_URL/api/agent/mail/$CONNECTION/messages/$MESSAGE_ID"</code></pre>
+		<p>Detail responses add <code>text</code>, <code>html</code>, <code>bodyTruncated</code>, <code>headers</code>, and <code>attachments</code> with a <code>url</code> you can fetch with the same key. <strong>HTML is untrusted.</strong> Never render it into a page; sanitize it or use the text part.</p>
+
+		<h2>Cleanup</h2>
+		<p><code>POST /mailboxes/{address}/trim</code> enforces the mailbox quotas now and returns <code>withinQuota</code>. It deletes up to 2,000 messages per call; call it again if the mailbox is still above quota.</p>
+		<p><code>POST /mailboxes/{address}/purge</code> accepts exactly one selector:</p>
+		<pre><code>{"all": true}
+{"olderThanDays": 30}
+{"before": "2026-01-01T00:00:00Z"}</code></pre>
+		<p>One call deletes up to 5,000 messages and returns <code>remaining</code> and <code>hasMore</code>; repeat while <code>hasMore</code> is true. <code>retention_days</code> is stored for future use; no cron deletes mail automatically.</p>
+
+		<h2>Storage and limits</h2>
+		<table>
+			<thead><tr><th>Limit</th><th>Value</th></tr></thead>
+			<tbody>
+				<tr><td>Cloudflare inbound message</td><td>25 MiB</td></tr>
+				<tr><td><code>MAX_MESSAGE_BYTES</code> (default)</td><td>10 MiB</td></tr>
+				<tr><td>Attachments in D1</td><td>at or below <code>INLINE_ATTACHMENT_MAX</code> (1 MiB default)</td></tr>
+				<tr><td>Attachments in KV</td><td>above that, up to 25 MiB each</td></tr>
+				<tr><td>Text and HTML parts</td><td><code>MAX_BODY_BYTES</code> each (512 KiB default)</td></tr>
+				<tr><td>Raw RFC 822 source</td><td>kept only at or below <code>RAW_INLINE_MAX</code> (128 KiB default)</td></tr>
+			</tbody>
+		</table>
+		<p><code>rawAvailable</code> is false for large messages; check it before requesting <code>/raw</code>. An attachment with <code>storage: "unavailable"</code> could not be stored and has no content.</p>
+
+		<h2>Delivery</h2>
+		<p>Cloudflare Email Routing delivers an address to the Worker only when a rule for it exists. The Worker checks the mailbox row and rejects unknown or disabled addresses with a permanent SMTP failure. Messages above <code>MAX_MESSAGE_BYTES</code> are rejected. Duplicate deliveries with the same source hash are ignored.</p>
+		<p>A mailbox whose <code>overflow</code> is <code>trim_oldest</code> deletes its oldest mail after accepting a new message. <code>reject_new</code> throws instead, so the sender may retry; storage is not guaranteed to be retried by every sender.</p>
+
+		<h2>Errors</h2>
+		<pre><code>{
+  "ok": false,
+  "apiVersion": "2026-09-13",
+  "error": {
+    "code": "insufficient_access",
+    "message": "This key has read access to 'notes@mail.example.com' but write is required.",
+    "details": {
+      "required": "write",
+      "effective": "read",
+      "resource": "notes@mail.example.com",
+      "permittedResources": ["notes@mail.example.com"]
+    }
+  }
+}</code></pre>
+		<p>Successful responses use <code>{"ok":true,"apiVersion":"...","data":{...}}</code>. Every response carries <code>X-Muse-Api-Version</code> and the pending-notice headers.</p>
+	</body>
+</html>

@@ -332,6 +332,20 @@ export async function getConnectionForAccount(db: D1Database, id: string, accoun
 	return row ? mapConnection(row) : null;
 }
 
+/** The account's singleton connection for a local service such as mail. */
+export async function getConnectionByProvider(
+	db: D1Database,
+	accountId: string,
+	provider: string,
+): Promise<Connection | null> {
+	const row = await first<RawConnection>(
+		db,
+		'SELECT * FROM connections WHERE account_id = ? AND provider = ? ORDER BY created_at ASC LIMIT 1',
+		[accountId, provider],
+	);
+	return row ? mapConnection(row) : null;
+}
+
 export async function updateConnection(
 	db: D1Database,
 	id: string,

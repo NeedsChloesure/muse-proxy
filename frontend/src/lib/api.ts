@@ -85,6 +85,8 @@ export interface ProviderInfo {
 	docsUrl: string;
 	fields: ProviderField[];
 	credentials: ProviderCredentials;
+	/** Hosted by this Worker (mail); managed from its own console page. */
+	local: boolean;
 }
 
 export interface Meta {
@@ -153,6 +155,109 @@ export interface TestResult {
 	error?: string;
 }
 
+// -- mail --------------------------------------------------------------------
+
+export type MailOverflow = 'trim_oldest' | 'reject_new';
+
+export interface Mailbox {
+	id: string;
+	connectionId: string;
+	address: string;
+	displayName: string | null;
+	enabled: boolean;
+	quotaBytes: number;
+	quotaMessages: number;
+	overflow: MailOverflow;
+	retentionDays: number;
+	usedBytes: number;
+	usedMessages: number;
+	createdAt: string;
+	updatedAt: string;
+	lastReceivedAt: string | null;
+	resourceId: string | null;
+	maxAccess: Access;
+}
+
+export interface MailAddress {
+	address: string;
+	name: string;
+}
+
+export interface MailAttachment {
+	id: string;
+	messageId: string;
+	filename: string | null;
+	mimeType: string;
+	sizeBytes: number;
+	contentId: string | null;
+	disposition: string | null;
+	isInline: boolean;
+	storage: string;
+	available: boolean;
+	url: string;
+	sha256: string | null;
+}
+
+export interface MailMessage {
+	id: string;
+	mailbox: string;
+	subject: string;
+	from: MailAddress;
+	envelopeFrom: string | null;
+	to: MailAddress[];
+	cc: MailAddress[];
+	replyTo: MailAddress[];
+	receivedAt: string;
+	sentAt: string | null;
+	messageId: string | null;
+	inReplyTo: string | null;
+	references: string | null;
+	preview: string;
+	sizeBytes: number;
+	storedBytes: number;
+	hasAttachments: boolean;
+	attachmentCount: number;
+	isRead: boolean;
+	isStarred: boolean;
+	rawAvailable: boolean;
+	parseError: string | null;
+}
+
+export interface MailMessageDetail extends MailMessage {
+	text: string;
+	html: string;
+	bodyTruncated: boolean;
+	headers: { key: string; value: string }[];
+	attachments: MailAttachment[];
+	rawUrl: string;
+}
+
+export interface MailStats {
+	messages: number;
+	unread: number;
+	bytes: number;
+	oldestAt: string | null;
+	newestAt: string | null;
+	attachments: { storage: string; count: number; bytes: number }[];
+}
+
+export interface MailboxDetail {
+	mailbox: Mailbox;
+	stats: MailStats;
+}
+
+export interface MailMessageQuery {
+	limit?: number;
+	cursor?: string | null;
+	order?: 'asc' | 'desc';
+	since?: string;
+	before?: string;
+	unread?: boolean;
+	starred?: boolean;
+	hasAttachments?: boolean;
+	q?: string;
+}
+
 // -- endpoints ---------------------------------------------------------------
 
 export const api = {
@@ -204,6 +309,68 @@ export const api = {
 		/** Permanently removes the key, its grants, and any notices it has not read. */
 		remove: (id: string) => request<{ deleted: string }>('DELETE', `/api/admin/keys/${id}`),
 		setGrants: (id: string, grants: Grant[]) => request<{ grants: Grant[] }>('PUT', `/api/admin/keys/${id}/grants`, { grants }),
+	},
+
+	mail: {
+		list: () => request<{ connectionId: string; mailboxes: Mailbox[] }>('GET', '/api/admin/mail'),
+		createMailbox: (input: {
+			address: string;
+			displayName?: string | null;
+			quotaBytes?: number;
+			quotaMessages?: number;
+			overflow?: MailOverflow;
+			retentionDays?: number;
+		}) => request<{ mailbox: Mailbox }>('POST', '/api/admin/mail/mailboxes', input),
+		getMailbox: (address: string) =>
+			request<MailboxDetail>('GET', `/api/admin/mail/mailboxes/${encodeURIComponent(address)}`),
+		updateMailbox: (
+			address: string,
+			input: {
+				displayName?: string | null;
+				enabled?: boolean;
+				quotaBytes?: number;
+				quotaMessages?: number;
+				overflow?: MailOverflow;
+				retentionDays?: number;
+			},
+		) => request<{ mailbox: Mailbox }>('PATCH', `/api/admin/mail/mailboxes/${encodeURIComponent(address)}`, input),
+		deleteMailbox: (address: string) =>
+			request<{ deleted: boolean; address: string; deletedMessages: number }>(
+				'DELETE',
+				`/api/admin/mail/mailboxes/${encodeURIComponent(address)}`,
+			),
+		messages: (address: string, query: MailMessageQuery = {}) => {
+			const params = new URLSearchParams();
+			if (query.limit !== undefined) params.set('limit', String(query.limit));
+			if (query.cursor) params.set('cursor', query.cursor);
+			if (query.order) params.set('order', query.order);
+			if (query.since) params.set('since', query.since);
+			if (query.before) params.set('before', query.before);
+			if (query.unread) params.set('unread', 'true');
+			if (query.starred) params.set('starred', 'true');
+			if (query.hasAttachments) params.set('hasAttachments', 'true');
+			if (query.q) params.set('q', query.q);
+			const suffix = params.toString();
+			return request<{ mailbox: Mailbox; messages: MailMessage[]; hasMore: boolean; nextCursor: string | null }>(
+				'GET',
+				`/api/admin/mail/mailboxes/${encodeURIComponent(address)}/messages${suffix ? `?${suffix}` : ''}`,
+			);
+		},
+		trim: (address: string) =>
+			request<{ deleted: number; withinQuota: boolean; mailbox: Mailbox | null }>(
+				'POST',
+				`/api/admin/mail/mailboxes/${encodeURIComponent(address)}/trim`,
+			),
+		purge: (address: string, input: { all?: boolean; olderThanDays?: number; before?: string }) =>
+			request<{ deleted: number; remaining: number; hasMore: boolean; mailbox: Mailbox | null }>(
+				'POST',
+				`/api/admin/mail/mailboxes/${encodeURIComponent(address)}/purge`,
+				input,
+			),
+		getMessage: (id: string) => request<{ message: MailMessageDetail }>('GET', `/api/admin/mail/messages/${id}`),
+		updateMessage: (id: string, input: { isRead?: boolean; isStarred?: boolean }) =>
+			request<{ message: MailMessageDetail }>('PATCH', `/api/admin/mail/messages/${id}`, input),
+		deleteMessage: (id: string) => request<{ deleted: boolean; id: string }>('DELETE', `/api/admin/mail/messages/${id}`),
 	},
 
 	accounts: {

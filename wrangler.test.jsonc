@@ -33,5 +33,11 @@
 			"binding": "DB",
 			"database_name": "muse-proxy-test"
 		}
+	],
+	"kv_namespaces": [
+		{
+			"binding": "ATTACHMENTS",
+			"id": "muse-proxy-test-attachments"
+		}
 	]
 }

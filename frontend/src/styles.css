@@ -424,3 +424,42 @@ pre {
 .radio-group input {
 	width: auto;
 }
+
+/* mail --------------------------------------------------------------------- */
+
+.mail-body {
+	white-space: pre-wrap;
+	word-break: break-word;
+	max-height: 40rem;
+	overflow: auto;
+	font-size: 0.88rem;
+	line-height: 1.55;
+}
+
+.mail-preview {
+	font-size: 0.82rem;
+	margin-top: 0.15rem;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	max-width: 32rem;
+}
+
+.mail-unread td {
+	font-weight: 600;
+}
+
+.mail-filter {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.3rem;
+	margin: 0;
+	font-size: 0.82rem;
+	font-weight: 500;
+	color: var(--text);
+	white-space: nowrap;
+}
+
+.mail-filter input {
+	width: auto;
+}

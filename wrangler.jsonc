@@ -1,5 +1,5 @@
 /**
- * Muse Proxy — an API-key gateway for user:password services.
+ * Muse Proxy — an API-key gateway for user:password services and inbound mail.
  *
  * Routing contract (see src/index.ts):
  *   /                        Worker-rendered landing page
@@ -54,12 +54,24 @@
 			 * Deploying by hand, replace it with the id printed by
 			 * `npx wrangler d1 create muse-proxy`.
 			 */
-			"database_id": "00000000-0000-0000-0000-000000000000"
+			"database_id": "9ce05405-1437-4abc-98a3-fadc15e90cb2"
+		}
+	],
+	/**
+	 * Mail attachments above INLINE_ATTACHMENT_MAX live here. The id is the
+	 * existing Maildrop namespace, deliberately reused: migrated attachment rows
+	 * keep their att/<mailbox>/<message>/<attachment> keys, and those objects are
+	 * still addressable after the merge.
+	 */
+	"kv_namespaces": [
+		{
+			"binding": "ATTACHMENTS",
+			"id": "9daae8e2c54b4e4f8b94e0f65ac0d438"
 		}
 	],
 	"vars": {
 		/** Allow self-service account creation from the frontend. The first account can always be created. */
-		"SIGNUP_ENABLED": "true",
+		"SIGNUP_ENABLED": "false",
 		/**
 		 * PBKDF2 iterations for account passwords. 100_000 keeps login inside the
 		 * Free plan's 10ms CPU budget; raise it on a Paid plan.
@@ -72,12 +84,37 @@
 		/** Allow plain http:// upstream servers. Off by default: credentials would travel in the clear. */
 		"ALLOW_INSECURE_HTTP": "false",
 		/** Optional comma-separated origins allowed to call /api/agent from a browser. Empty disables CORS entirely. */
-		"AGENT_CORS_ORIGIN": ""
+		"AGENT_CORS_ORIGIN": "",
+		/**
+		 * Mail, merged from Maildrop. Addresses may still be on the Maildrop domain
+		 * even though the HTTP hostname is retired: Cloudflare Email Routing targets
+		 * the Worker, not a custom HTTP route.
+		 */
+		"DEFAULT_DOMAIN": "maildrop.beautiful.computer",
+		/** Largest inbound message accepted, in bytes. Cloudflare caps inbound mail at 25 MiB. */
+		"MAX_MESSAGE_BYTES": "10485760",
+		/** Attachments at or below this size are stored as D1 BLOBs; larger ones go to KV. */
+		"INLINE_ATTACHMENT_MAX": "1048576",
+		/** Raw RFC 822 source is kept inline only when it fits in this many bytes. */
+		"RAW_INLINE_MAX": "131072",
+		/** Text and HTML bodies are truncated to this many bytes each. */
+		"MAX_BODY_BYTES": "524288",
+		/** Stored for future use. 0 disables; trim and purge are the active controls. */
+		"RETENTION_DAYS": "0"
 	},
 	"keep_vars": true,
 	"secrets": {
 		"required": [
 			"CREDENTIAL_ENCRYPTION_KEY"
 		]
-	}
+	},
+	"routes": [
+		{
+			"pattern": "muse.beautiful.computer",
+			"zone_name": "beautiful.computer",
+			"custom_domain": true,
+			"enabled": true,
+			"previews_enabled": false
+		}
+	]
 }

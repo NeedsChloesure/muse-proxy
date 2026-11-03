@@ -45,10 +45,16 @@ connectionRoutes.post('/', async (c) => {
 
 	const providerType = requiredOneOf(body, 'provider', providerTypes());
 	const provider = requireProvider(providerType);
+	// A local service has no credential pair to store and its connection is
+	// created by its own console page (see src/mail/connection.ts).
 
 	const label = requiredString(body, 'label', { max: 80 });
 	// Config is provider-owned and declaratively validated, so a connection can
 	// only ever carry the fields its provider declared.
+	if (provider.local) {
+		throw new HttpError(400, 'managed_service', `${provider.displayName} is managed from its own console page.`);
+	}
+
 	const config = provider.validateConfig(body.config);
 	const credentials = readCredentials(provider, body);
 	const authType = validateAuthType(provider, body.authType, provider.defaultAuthType);
@@ -125,6 +131,10 @@ connectionRoutes.patch('/:id', async (c) => {
 	const configTouched = body.config !== undefined;
 	const config = configTouched ? provider.validateConfig(body.config) : parseJson(connection.configJson);
 
+	if (provider.local && (secret !== undefined || username !== undefined || authType !== undefined || configTouched)) {
+		throw new HttpError(400, 'managed_service', `${provider.displayName} has no credentials or connection config to edit.`);
+	}
+
 	if (configTouched) provider.verifyConfig(config, c.env);
 
 	const changes: Parameters<typeof repo.updateConnection>[2] = {};
@@ -173,6 +183,10 @@ connectionRoutes.patch('/:id', async (c) => {
 
 connectionRoutes.delete('/:id', async (c) => {
 	const connection = await owned(c);
+	const provider = getProvider(connection.provider);
+	if (provider?.local) {
+		throw new HttpError(400, 'managed_service', `${provider.displayName} cannot be deleted here; remove its mailboxes instead.`);
+	}
 	const db = c.env.DB;
 
 	// Fan out while the grants still exist, but keep the notice row itself free
@@ -230,6 +244,10 @@ connectionRoutes.post('/:id/discover', async (c) => {
 /** Add a collection by hand, for servers whose discovery is incomplete. */
 connectionRoutes.post('/:id/resources', async (c) => {
 	const connection = await owned(c);
+	const provider = getProvider(connection.provider);
+	if (provider?.local) {
+		throw new HttpError(400, 'managed_service', 'Mailboxes are created from the Mail page.');
+	}
 	const body = await readJson(c.req.raw);
 
 	const resourceKey = toResourceKey(requiredString(body, 'resourceKey', { max: 500 }));
@@ -282,6 +300,10 @@ connectionRoutes.patch('/:id/resources/:resourceId', async (c) => {
 
 connectionRoutes.delete('/:id/resources/:resourceId', async (c) => {
 	const connection = await owned(c);
+	const provider = getProvider(connection.provider);
+	if (provider?.local) {
+		throw new HttpError(400, 'managed_service', 'Delete the mailbox from the Mail page instead.');
+	}
 	const resource = await repo.getResource(c.env.DB, c.req.param('resourceId'));
 	if (!resource || resource.connectionId !== connection.id) {
 		throw new HttpError(404, 'not_found', 'No such collection on this connection.');
@@ -333,6 +355,7 @@ function validateAuthType(provider: ServiceProvider, value: unknown, fallback: s
  * it needs a username, so a token-only provider is not forced to invent one.
  */
 function readCredentials(provider: ServiceProvider, body: Record<string, unknown>): ProviderCredentials {
+	if (provider.requiresCredentials === false) return { username: null, secret: '' };
 	const username = optionalString(body, 'username', { max: 200 }) ?? null;
 	if (provider.credentials.usernameRequired && !username) {
 		throw new HttpError(400, 'invalid_request', `'username' is required for ${provider.displayName}.`, { field: 'username' });
@@ -347,7 +370,10 @@ async function providerCtx(env: Env, connection: Connection, config: Record<stri
 		env,
 		connectionId: connection.id,
 		config,
-		credentials: { username: connection.username, secret: await decryptSecret(connection.secretCiphertext, env) },
+		credentials: {
+			username: connection.username,
+			secret: connection.secretCiphertext ? await decryptSecret(connection.secretCiphertext, env) : '',
+		},
 		authType: connection.authType,
 	};
 }

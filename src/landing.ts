@@ -32,8 +32,11 @@ description of this deployment instead:
   /docs/                         Documentation, versioned with the code.
 
 Access is scoped twice over and both layers must allow a request: the connection
-owner sets a ceiling per collection (calendar or address book), and your key
-carries its own grants. A denial tells you which collections you can use.
+owner sets a ceiling per collection (calendar, address book or mailbox), and your
+key carries its own grants. A denial tells you which collections you can use.
+
+Mail is hosted by this Worker under /api/agent/mail/<connectionId>/; its mailboxes
+are resources like any other collection.
 `;
 
 function html(): string {
@@ -83,7 +86,8 @@ function html(): string {
 		<p>The API is date-versioned and every response carries <code>X-Muse-Api-Version</code>. Responses also carry <code>X-Muse-Notices</code>: when it is non-zero, fetch the notices endpoint and tell the human you are working for.</p>
 
 		<h2>How access works</h2>
-		<p>Every request must satisfy two independent layers. The account owner sets a ceiling per collection (calendar or address book) — <code>none</code>, <code>read</code> or <code>write</code> — and each API key carries its own grants. A request is allowed only if both permit it, so a key can never exceed the connection it uses.</p>
+		<p>Every request must satisfy two independent layers. The account owner sets a ceiling per collection (calendar, address book or mailbox) — <code>none</code>, <code>read</code> or <code>write</code> — and each API key carries its own grants. A request is allowed only if both permit it, so a key can never exceed the connection it uses.</p>
+		<p>Mail is hosted by this Worker under <code>/api/agent/mail/&lt;connectionId&gt;/</code>. Its mailboxes are resources like any other collection.</p>
 		<pre>curl -H "Authorization: Bearer muse_..." \\
   -X PROPFIND -H "Depth: 1" \\
   https://&lt;this-host&gt;/api/agent/caldav/&lt;connectionId&gt;/</pre>

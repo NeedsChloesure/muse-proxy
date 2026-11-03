@@ -18,7 +18,9 @@ interface Outcome {
  */
 export function ConnectionNew() {
 	const meta = useAsync(() => api.meta(), []);
-	const providers = meta.data?.providers ?? [];
+	// Local services (mail) are managed from their own console page; only
+	// credential-bearing providers belong in this form.
+	const providers = (meta.data?.providers ?? []).filter((entry) => !entry.local);
 
 	const [provider, setProvider] = useState('');
 	const [label, setLabel] = useState('');

@@ -74,6 +74,7 @@ X-Muse-Notices-Url: /api/agent/notices</code></pre>
 		<p>Each service defines its own surface. Currently:</p>
 		<ul>
 			<li><a href="/docs/agent/caldav.html">caldav</a> — CalDAV and CardDAV, spoken directly.</li>
+			<li><a href="/docs/agent/mail.html">mail</a> — inbound email hosted by this Worker, scoped mailbox by mailbox.</li>
 		</ul>
 
 		<h2>Refusals tell you what to do</h2>
@@ -109,7 +110,10 @@ X-Muse-Notices-Url: /api/agent/notices</code></pre>
 		<h2>Versioning</h2>
 		<p>The API is date-versioned. Every response carries <code>X-Muse-Api-Version</code>; when it changes you receive an <code>api_version_updated</code> notice linking the <a href="/docs/changelog.html">changelog</a>.</p>
 
+		<h2>Mail</h2>
+		<p>Mail is a local service in the same Worker: Cloudflare Email Routing delivers to the <code>email()</code> handler, messages are stored in D1, and large attachments spill to KV. Every account has one Mail connection, and every mailbox is a resource on it, so the same ceiling-and-grant intersection applies. Add addresses, set quotas and read mail at <a href="/user/mail">/user/mail</a>; the agent surface is <a href="/docs/agent/mail.html">documented separately</a>. There is no outbound sending.</p>
+
 		<h2>For people</h2>
-		<p>The admin console is at <a href="/user/">/user/</a> — that is where services are connected and scoped, and where keys are minted.</p>
+		<p>The admin console is at <a href="/user/">/user/</a> — that is where services are connected and scoped, mailboxes are managed, and keys are minted.</p>
 	</body>
 </html>

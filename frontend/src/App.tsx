@@ -7,6 +7,7 @@ import { ConnectionDetail } from './pages/ConnectionDetail';
 import { ConnectionNew } from './pages/ConnectionNew';
 import { Dashboard } from './pages/Dashboard';
 import { KeyDetailPage, KeysPage } from './pages/Keys';
+import { MailboxPage, MailPage, MessagePage } from './pages/Mail';
 import { SettingsPage } from './pages/Misc';
 
 export function App() {
@@ -69,6 +70,9 @@ function Shell({ account, onSignOut }: { account: Account; onSignOut: () => void
 				<NavLink to="/" end className="navlink">
 					Connections
 				</NavLink>
+				<NavLink to="/mail" className="navlink">
+					Mail
+				</NavLink>
 				<NavLink to="/keys" className="navlink">
 					API keys
 				</NavLink>
@@ -97,6 +101,9 @@ function Shell({ account, onSignOut }: { account: Account; onSignOut: () => void
 					<Route path="/" element={<Dashboard />} />
 					<Route path="/connections/new" element={<ConnectionNew />} />
 					<Route path="/connections/:id" element={<ConnectionDetail />} />
+					<Route path="/mail" element={<MailPage />} />
+					<Route path="/mail/mailboxes/:address" element={<MailboxPage />} />
+					<Route path="/mail/messages/:id" element={<MessagePage />} />
 					<Route path="/keys" element={<KeysPage />} />
 					<Route path="/keys/:id" element={<KeyDetailPage />} />
 					<Route path="/settings" element={<SettingsPage account={account} />} />

@@ -26,6 +26,7 @@ import { adminRoutes } from './admin/router';
 import type { AppBindings } from './auth/middleware';
 import { handleAgentRequest } from './agent/router';
 import { renderLanding } from './landing';
+import { handleEmail } from './mail/email';
 import { problem, toErrorResponse } from './lib/http';
 
 const AGENT_PREFIX = '/api/agent';
@@ -42,6 +43,9 @@ api.notFound(() => problem(404, 'not_found', 'No such API endpoint.'));
 api.route('/api/admin', adminRoutes);
 
 export default {
+	/** Cloudflare Email Routing entrypoint. Unknown recipients are rejected. */
+	email: handleEmail,
+
 	async fetch(request, env, ctx): Promise<Response> {
 		const url = new URL(request.url);
 		const path = url.pathname;

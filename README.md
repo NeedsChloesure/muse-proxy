@@ -4,12 +4,13 @@
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/NeedsChloesure/muse-proxy)
 
-An API-key gateway for services that normally require a username and password. This service is primarily for [Meta Muse](https://muse.ai), which has strict guardrails against agents storing passwords and other secrets in plaintext. Agents adhere to this very well, so it's easier to work around it by supporting **what is allowed** rather than doing creative workarounds.
+An API-key gateway for services that normally require a username and password, plus inbound mail hosted by this Worker. This service is primarily for [Meta Muse](https://muse.ai), which has strict guardrails against agents storing passwords and other secrets in plaintext. Agents adhere to this very well, so it's easier to work around it by supporting **what is allowed** rather than doing creative workarounds.
 
 The account owner stores the upstream credentials once, and chooses the connection ceiling (what must never happen). API keys may then be created and handed to agents so they can access/edit your supported service. Additionally, API keys can be scoped to allow access to only some access (i.e. ceiling is write, but this other agent should only read).
 
 The currently supported services are:
  - CalDAV / CardDAV
+ - Mail (inbound email, stored by this Worker)
 
 You may add additional services by [submitting a pull request](./CONTRIBUTING.md), and it is also permissible to fork this service for private or commercial use — see the [license](./LICENSE).
 
@@ -23,12 +24,15 @@ npm test -- --run        # builds frontend assets, then runs the suite
 npm run build            # builds the SPA into frontend/dist
 ```
 
-Create the database and apply the schema:
+Create the database and the attachment bucket, apply the schema:
 
 ```bash
 npx wrangler d1 create muse-proxy     # replace the placeholder database_id in wrangler.jsonc
+npx wrangler kv namespace create ATTACHMENTS   # replace the placeholder id in wrangler.jsonc
 npm run db:migrate:local
 ```
+
+Mail is part of the same Worker: the D1 database stores mailboxes, messages and attachment metadata, and the `ATTACHMENTS` KV namespace holds attachments above `INLINE_ATTACHMENT_MAX`.
 
 Provide the one required secret (it encrypts stored upstream credentials):
 
@@ -86,6 +90,17 @@ a wildcard grant **and** a connection-level permission on every known resource.
 They are refused rather than filtered: an unfiltered multi-status response would
 leak collection names and etags.
 
+## Mail
+
+Mail is a local service in the same Worker. Cloudflare Email Routing delivers to the `email()` handler, messages are parsed and stored in D1, and attachments above `INLINE_ATTACHMENT_MAX` spill to the `ATTACHMENTS` KV namespace. There is no IMAP, SMTP, or outbound sending.
+
+Each account owns one local `Mail` connection. Every mailbox is a resource on that connection (`kind: mailbox`), so the existing two-layer permission model scopes it with no new grant type: the mailbox's ceiling is set on the Mail page, and a key needs a matching grant. New mailboxes start at `none`, exactly like a discovered calendar.
+
+- Console: `/user/mail` — add addresses, set quotas, read messages, download attachments, trim, purge, and choose the agent ceiling per mailbox.
+- Agent API: `GET /api/agent/mail/<connectionId>/...`, authenticated with `muse_...`. There is no `/api/v1`, `ADMIN_TOKEN`, or `mk_` key. See `/docs/agent/mail.html`.
+- Owner-only actions: creating/deleting a mailbox and minting keys. An agent key can read, flag, delete, trim and purge mail inside the mailboxes it was granted; it cannot create a mailbox or issue another key.
+- Every address still needs a Cloudflare Email Routing rule that sends it to this Worker. Mail for an unknown or disabled address is rejected at delivery.
+
 ## Using it with an agent/Muse
 
 Self-configuration should work, tell your agent to fetch the home page, and any agent should recognize and attempt configuration. This behavior is tested and works for at least one supported service, CalDAV. 
@@ -112,6 +127,16 @@ Agents send the apikeys as `Authorization: Bearer muse_...`. Machine-readable do
 - **`AGENT_CORS_ORIGIN`** — one or more comma-separated origins allowed to call
   `/api/agent` from a browser. Preflight advertises the full supported DAV method
   set. Empty disables CORS entirely.
+- **`DEFAULT_DOMAIN`** — mail domain used when the console is given a bare name
+  instead of a full address.
+- **`MAX_MESSAGE_BYTES`** — largest inbound message accepted (10 MiB by default;
+  Cloudflare's ceiling is 25 MiB).
+- **`INLINE_ATTACHMENT_MAX`** — attachments at or below this size stay in D1;
+  larger ones go to `ATTACHMENTS` KV. Keep it well under D1's 2 MB row limit.
+- **`RAW_INLINE_MAX`**, **`MAX_BODY_BYTES`** — raw source and body retention
+  budgets per message. `raw_available` is false when the source was not kept.
+- **`RETENTION_DAYS`** — stored for future use. `trim` and `purge` are the active
+  cleanup controls; no cron runs.
 - **`CREDENTIAL_ENCRYPTION_KEY`** — AES-GCM key for credentials at rest. Losing
   it means re-entering every stored credential.
 
