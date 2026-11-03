@@ -490,6 +490,13 @@ describe('key lifecycle', () => {
 		expect((await gatewayFetch(seed.connectionId, '/calendars/alice/work/', seed.token, { method: 'PROPFIND' })).status).toBe(401);
 	});
 
+	it('refuses a key as soon as its account is disabled', async () => {
+		await repo.updateAccountFlags(env.DB, seed.accountId, { disabledAt: Date.now() });
+		const response = await gatewayFetch(seed.connectionId, '/calendars/alice/work/', seed.token, { method: 'PROPFIND' });
+		expect(response.status).toBe(403);
+		expect(((await response.json()) as { error: { code: string } }).error.code).toBe('account_disabled');
+	});
+
 	it('refuses a key with no grant on the connection', async () => {
 		const other = crypto.randomUUID();
 		const existing = (await repo.getConnection(env.DB, seed.connectionId))!;

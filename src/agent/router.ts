@@ -10,7 +10,7 @@
 import { configFrom } from '../config';
 import {
 	countPendingNoticesForKey,
-	listConnections,
+	listConnectionsByIds,
 	listGrantsForKey,
 	listResourcesForConnections,
 	touchApiKey,
@@ -143,7 +143,9 @@ async function routeAgent(request: Request, env: Env, ctx: ExecutionContext): Pr
 			requireAccess({ scope: route.scope, grants: route.grants, decision, required, message }),
 	});
 
-	ctx.waitUntil(touchApiKey(env.DB, identity.key.id));
+	if (identity.key.lastUsedAt === null || identity.key.lastUsedAt <= Date.now() - 86_400_000) {
+		ctx.waitUntil(touchApiKey(env.DB, identity.key.id));
+	}
 
 	return withAgentHeaders(result.response, { pendingNotices: pending });
 }
@@ -179,12 +181,9 @@ async function catalog(request: Request, env: Env, ctx: ExecutionContext): Promi
 	}
 
 	const identity = await resolveAgentIdentity(env, request);
-	const connections = await listConnections(env.DB, identity.account.id);
 	const grants = await listGrantsForKey(env.DB, identity.key.id);
-	const resources = await listResourcesForConnections(
-		env.DB,
-		connections.map((connection) => connection.id),
-	);
+	const connections = await listConnectionsByIds(env.DB, identity.account.id, [...new Set(grants.map((grant) => grant.connectionId))]);
+	const resources = await listResourcesForConnections(env.DB, connections.map((connection) => connection.id));
 	const notices = await listPendingAgentNotices(env.DB, identity.key.id, 20);
 
 	const byConnection = new Map<string, ScopeEntry[]>();
@@ -265,7 +264,9 @@ async function acknowledgeNotices(request: Request, env: Env, ctx: ExecutionCont
 
 	await deleteAgentNotices(env.DB, identity.key.id, ids);
 	const remaining = await countPendingNoticesForKey(env.DB, identity.key.id);
-	ctx.waitUntil(touchApiKey(env.DB, identity.key.id));
+	if (identity.key.lastUsedAt === null || identity.key.lastUsedAt <= Date.now() - 86_400_000) {
+		ctx.waitUntil(touchApiKey(env.DB, identity.key.id));
+	}
 	return agentJson({ acknowledged: ids.length, pending: remaining }, []);
 }
 

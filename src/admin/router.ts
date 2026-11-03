@@ -40,7 +40,7 @@ auth.post('/signup', requireSameOrigin, async (c) => {
 	});
 	const password = requiredString(body, 'password', { min: 10, max: 200, trim: false });
 
-	const accountCount = await repo.countAccounts(c.env.DB);
+	const accountCount = (await repo.hasAccounts(c.env.DB)) ? 1 : 0;
 	if (!signupAllowed(c.env, accountCount)) {
 		throw new HttpError(403, 'signup_disabled', 'Account creation is disabled on this deployment.');
 	}
@@ -66,7 +66,7 @@ auth.post('/signup', requireSameOrigin, async (c) => {
 		if (!isAdmin) {
 			// The first-account check can lose a race after the initial count. Re-read
 			// the state before allowing a concurrent request through signup gating.
-			const currentCount = await repo.countAccounts(c.env.DB);
+			const currentCount = (await repo.hasAccounts(c.env.DB)) ? 1 : 0;
 			if (!signupAllowed(c.env, currentCount)) {
 				throw new HttpError(403, 'signup_disabled', 'Account creation is disabled on this deployment.');
 			}
@@ -172,7 +172,7 @@ adminRoutes.route('/auth', auth);
 // -- public metadata ---------------------------------------------------------
 
 adminRoutes.get('/meta', async (c) => {
-	const accountCount = await repo.countAccounts(c.env.DB);
+	const accountCount = (await repo.hasAccounts(c.env.DB)) ? 1 : 0;
 	return json({
 		ok: true,
 		apiVersion: API_VERSION,
@@ -205,17 +205,13 @@ const accounts = new Hono<AppBindings>();
 accounts.use('*', requireSession, requireSameOrigin, requireAdmin);
 
 accounts.get('/', async (c) => {
-	const all = await repo.listAccounts(c.env.DB);
-	// `connectionCount` counts connections. It used to be filled from each
-	// account's API keys, so an account with three keys and no connections
-	// reported three connections.
-	const connections = await Promise.all(all.map((account) => repo.listConnections(c.env.DB, account.id)));
+	const all = await repo.listAccountsWithConnectionCounts(c.env.DB);
 	return json({
 		ok: true,
 		data: {
-			accounts: all.map((account, index) => ({
+			accounts: all.map((account) => ({
 				...accountView(account),
-				connectionCount: (connections[index] ?? []).length,
+				connectionCount: account.connectionCount,
 			})),
 		},
 	});

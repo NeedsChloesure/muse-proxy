@@ -1,7 +1,8 @@
-import { env, SELF } from 'cloudflare:test';
+import { createExecutionContext, env, SELF, waitOnExecutionContext } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { maybeEmitApiVersionNotice, resetApiVersionCheck, emitNotice } from '../src/agent/notices';
+import { handleAgentRequest } from '../src/agent/router';
 import * as repo from '../src/db/repo';
 import { API_VERSION } from '../src/types';
 import { seedGateway, url, type SeededGateway } from './helpers';
@@ -84,6 +85,24 @@ describe('service catalog', () => {
 		const response = await agentFetch('/api/agent', { token: seed.token });
 		const body = (await response.json()) as { data: { connections: Array<{ id: string }> } };
 		expect(body.data.connections.map((connection) => connection.id)).toEqual([seed.connectionId]);
+	});
+
+	it('keeps connection creation order when grants name them in a different order', async () => {
+		const existing = (await repo.getConnection(env.DB, seed.connectionId))!;
+		for (const id of ['conn-z', 'conn-a']) {
+			await repo.createConnection(env.DB, {
+				id, accountId: seed.accountId, provider: 'caldav', label: id, authType: 'basic',
+				username: 'alice', secretCiphertext: 'v1:x:y', secretHint: '••••', configJson: existing.configJson,
+				now: existing.createdAt,
+			});
+		}
+		await repo.replaceGrants(env.DB, 'key-1', [
+			{ id: 'g-z', connectionId: 'conn-z', resourceKey: '*', maxAccess: 'read' },
+			{ id: 'g-a', connectionId: 'conn-a', resourceKey: '*', maxAccess: 'read' },
+		]);
+		const response = await agentFetch('/api/agent', { token: seed.token });
+		const body = (await response.json()) as { data: { connections: Array<{ id: string }> } };
+		expect(body.data.connections.map((connection) => connection.id)).toEqual(['conn-z', 'conn-a']);
 	});
 
 	it('publishes an OpenAPI document covering the provider routes', async () => {
@@ -194,6 +213,37 @@ describe('notices', () => {
 		});
 		expect(response.status).toBe(200);
 		expect(((await response.json()) as { data: { acknowledged: number } }).data.acknowledged).toBe(1);
+	});
+});
+
+describe('key activity writes', () => {
+	it('updates only when the last use is at least a day old', async () => {
+		let touches = 0;
+		const db = {
+			prepare(sql: string) {
+				if (sql.startsWith('UPDATE api_keys SET last_used_at')) touches++;
+				return env.DB.prepare(sql);
+			},
+		} as D1Database;
+		const testEnv = { ...env, DB: db } as Env;
+		const request = () => new Request(url(`/api/agent/caldav/${seed.connectionId}/calendars/alice/work/`), {
+			method: 'OPTIONS',
+			headers: { authorization: `Bearer ${seed.token}` },
+		});
+		const invoke = async () => {
+			const ctx = createExecutionContext();
+			const response = await handleAgentRequest(request(), testEnv, ctx);
+			expect(response.status).toBe(204);
+			await waitOnExecutionContext(ctx);
+		};
+
+		await invoke();
+		expect(touches).toBe(1);
+		await invoke();
+		expect(touches).toBe(1);
+		await env.DB.prepare('UPDATE api_keys SET last_used_at = ? WHERE id = ?').bind(Date.now() - 86_400_001, 'key-1').run();
+		await invoke();
+		expect(touches).toBe(2);
 	});
 });
 

@@ -29,10 +29,14 @@ interface GrantInput {
 keyRoutes.get('/', async (c) => {
 	const accountId = c.get('session').account.id;
 	const keys = await repo.listApiKeys(c.env.DB, accountId);
-	const withGrants = [];
-	for (const key of keys) {
-		withGrants.push({ ...keyView(key), grants: await repo.listGrantsForKey(c.env.DB, key.id) });
+	const grants = await repo.listGrantsForKeys(c.env.DB, keys.map((key) => key.id));
+	const byKey = new Map<string, ApiKeyGrant[]>();
+	for (const grant of grants) {
+		const entries = byKey.get(grant.keyId) ?? [];
+		entries.push(grant);
+		byKey.set(grant.keyId, entries);
 	}
+	const withGrants = keys.map((key) => ({ ...keyView(key), grants: byKey.get(key.id) ?? [] }));
 	return json({ ok: true, data: { keys: withGrants } });
 });
 

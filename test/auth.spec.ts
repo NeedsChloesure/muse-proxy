@@ -143,6 +143,14 @@ describe('login', () => {
 		expect(body.error.code).toBe('account_locked');
 	});
 
+	it('rejects a session as soon as its account is disabled', async () => {
+		const { cookie, accountId } = await signUp('alice');
+		await repo.updateAccountFlags(env.DB, accountId, { disabledAt: Date.now() });
+		const response = await SELF.fetch(url('/api/admin/auth/me'), { headers: { cookie } });
+		expect(response.status).toBe(403);
+		expect(((await response.json()) as { error: { code: string } }).error.code).toBe('account_disabled');
+	});
+
 	it('logs out by clearing the session', async () => {
 		const { cookie } = await signUp('alice');
 
@@ -248,6 +256,16 @@ describe('admin account list', () => {
 		);
 		// Two keys on one connection used to read as a connection count of two.
 		expect(listed.data.accounts.find((account) => account.username === 'alice')?.connectionCount).toBe(1);
+	});
+
+	it('includes accounts without connections with a count of zero', async () => {
+		const { cookie } = await signUp('alice');
+		await signUp('bob');
+		const listed = await adminOk<{ data: { accounts: Array<{ username: string; connectionCount: number }> } }>(cookie, '/api/admin/accounts');
+		expect(listed.data.accounts.map(({ username, connectionCount }) => ({ username, connectionCount }))).toEqual([
+			{ username: 'alice', connectionCount: 0 },
+			{ username: 'bob', connectionCount: 0 },
+		]);
 	});
 });
 

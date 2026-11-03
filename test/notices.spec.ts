@@ -67,6 +67,64 @@ async function pendingKinds(keyId: string): Promise<string[]> {
 	return (await repo.listPendingAgentNotices(env.DB, keyId)).map((notice) => notice.kind);
 }
 
+describe('account-scoped lists', () => {
+	it('groups each key and connection with only its own grants and resources', async () => {
+		const alice = await accountWithConnection('alice');
+		const bob = await accountWithConnection('bob');
+		await repo.createConnection(env.DB, {
+			id: 'alice-empty', accountId: alice.accountId, provider: 'caldav', label: 'Empty', authType: 'basic',
+			username: 'alice', secretCiphertext: 'v1:x:y', secretHint: '••••', configJson: '{}', now: Date.now(),
+		});
+		const work = 'calendars/alice/work';
+		const privateKey = 'calendars/alice/private';
+		const aliceFirst = await mintKey(alice.cookie, 'first', [{ connectionId: alice.connectionId, resourceKey: work, maxAccess: 'read' }]);
+		const aliceSecond = await mintKey(alice.cookie, 'second', [{ connectionId: alice.connectionId, resourceKey: privateKey, maxAccess: 'write' }]);
+		await mintKey(bob.cookie, 'bob key', [{ connectionId: bob.connectionId, resourceKey: work, maxAccess: 'read' }]);
+
+		const keys = await adminOk<{ data: { keys: Array<{ id: string; grants: Array<{ resourceKey: string; keyId: string }> }> } }>(alice.cookie, '/api/admin/keys');
+		expect(keys.data.keys).toHaveLength(2);
+		expect(keys.data.keys.find((key) => key.id === aliceFirst.keyId)?.grants).toMatchObject([{ keyId: aliceFirst.keyId, resourceKey: work }]);
+		expect(keys.data.keys.find((key) => key.id === aliceSecond.keyId)?.grants).toMatchObject([{ keyId: aliceSecond.keyId, resourceKey: privateKey }]);
+
+		const connections = await adminOk<{ data: { connections: Array<{ id: string; resources: Array<{ resourceKey: string }> }> } }>(alice.cookie, '/api/admin/connections');
+		expect(connections.data.connections).toHaveLength(2);
+		expect(connections.data.connections.find((connection) => connection.id === alice.connectionId)?.resources.map((resource) => resource.resourceKey)).toEqual([privateKey, work]);
+		expect(connections.data.connections.find((connection) => connection.id === 'alice-empty')?.resources).toEqual([]);
+	});
+});
+
+it('lists grants and resources across compound-query groups without duplicates', async () => {
+	const { accountId, connectionId } = await accountWithConnection('groups');
+	const connections = [connectionId];
+	const keys: string[] = [];
+	for (let i = 0; i < 5; i++) {
+		const id = `groups-conn-${i}`;
+		await repo.createConnection(env.DB, {
+			id, accountId, provider: 'caldav', label: id, authType: 'basic', username: 'groups',
+			secretCiphertext: 'v1:x:y', secretHint: '••••', configJson: '{}', now: Date.now(),
+		});
+		connections.push(id);
+		await repo.upsertResource(env.DB, {
+			id: `groups-res-${i}`, connectionId: id, resourceKey: `collection-${i}`, kind: 'calendar',
+			displayName: null, metaJson: '{}', now: Date.now(),
+		});
+		const keyId = `groups-key-${i}`;
+		keys.push(keyId);
+		await repo.createApiKey(env.DB, {
+			id: keyId, accountId, name: keyId, prefix: keyId, tokenHash: keyId, createdAt: Date.now(), expiresAt: null,
+		});
+		await repo.replaceGrants(env.DB, keyId, [{ id: `groups-grant-${i}`, connectionId: id, resourceKey: '*', maxAccess: 'read' }]);
+	}
+	const resources = await repo.listResourcesForConnections(env.DB, [...connections, connectionId]);
+	expect(resources).toHaveLength(7);
+	expect(new Set(resources.map((resource) => resource.id)).size).toBe(7);
+	const grants = await repo.listGrantsForKeys(env.DB, [...keys, keys[0]]);
+	expect(grants).toHaveLength(5);
+	expect(new Set(grants.map((grant) => grant.keyId))).toEqual(new Set(keys));
+	expect(await repo.listResourcesForConnections(env.DB, [])).toEqual([]);
+	expect(await repo.listGrantsForKeys(env.DB, [])).toEqual([]);
+});
+
 describe('emit-time delivery targeting', () => {
 	it('delivers a connection-scoped notice only to keys holding a grant on it', async () => {
 		const { accountId, connectionId } = await accountWithConnection('carol');

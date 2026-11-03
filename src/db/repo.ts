@@ -63,9 +63,32 @@ function mapAccount(row: RawAccount): Account {
 	};
 }
 
-export async function countAccounts(db: D1Database): Promise<number> {
-	const row = await first<{ count: number }>(db, 'SELECT COUNT(*) AS count FROM accounts');
-	return row?.count ?? 0;
+type JoinedAccount = { account_row_id: string | null } & {
+	[K in Exclude<keyof RawAccount, 'id'> as `account_${K}`]: RawAccount[K];
+};
+
+const joinedAccountColumns = `a.id AS account_row_id, a.username AS account_username,
+	a.password_hash AS account_password_hash, a.is_admin AS account_is_admin,
+	a.created_at AS account_created_at, a.disabled_at AS account_disabled_at,
+	a.failed_logins AS account_failed_logins, a.locked_until AS account_locked_until`;
+
+function mapJoinedAccount(row: JoinedAccount): Account | null {
+	if (row.account_row_id === null) return null;
+	return mapAccount({
+		id: row.account_row_id,
+		username: row.account_username,
+		password_hash: row.account_password_hash,
+		is_admin: row.account_is_admin,
+		created_at: row.account_created_at,
+		disabled_at: row.account_disabled_at,
+		failed_logins: row.account_failed_logins,
+		locked_until: row.account_locked_until,
+	});
+}
+
+export async function hasAccounts(db: D1Database): Promise<boolean> {
+	const row = await first<{ present: number }>(db, 'SELECT EXISTS(SELECT 1 FROM accounts) AS present');
+	return row?.present === 1;
 }
 
 export async function getAccountById(db: D1Database, id: string): Promise<Account | null> {
@@ -81,6 +104,15 @@ export async function getAccountByUsername(db: D1Database, username: string): Pr
 export async function listAccounts(db: D1Database): Promise<Account[]> {
 	const rows = await all<RawAccount>(db, 'SELECT * FROM accounts ORDER BY created_at ASC');
 	return rows.map(mapAccount);
+}
+
+export async function listAccountsWithConnectionCounts(db: D1Database): Promise<Array<Account & { connectionCount: number }>> {
+	const rows = await all<RawAccount & { connection_count: number }>(
+		db,
+		`SELECT a.*, (SELECT COUNT(*) FROM connections c WHERE c.account_id = a.id) AS connection_count
+		 FROM accounts a ORDER BY a.created_at ASC`,
+	);
+	return rows.map((row) => ({ ...mapAccount(row), connectionCount: row.connection_count }));
 }
 
 export async function createAccount(
@@ -177,9 +209,17 @@ export async function createSession(
 	);
 }
 
-export async function getSessionByTokenHash(db: D1Database, tokenHash: string): Promise<Session | null> {
-	const row = await first<RawSession>(db, 'SELECT * FROM sessions WHERE token_hash = ?', [tokenHash]);
-	return row ? mapSession(row) : null;
+export async function getSessionIdentityByTokenHash(
+	db: D1Database,
+	tokenHash: string,
+): Promise<{ session: Session; account: Account | null } | null> {
+	const row = await first<RawSession & JoinedAccount>(
+		db,
+		`SELECT s.*, ${joinedAccountColumns} FROM sessions s
+		 LEFT JOIN accounts a ON a.id = s.account_id WHERE s.token_hash = ?`,
+		[tokenHash],
+	);
+	return row ? { session: mapSession(row), account: mapJoinedAccount(row) } : null;
 }
 
 export async function deleteSessionByTokenHash(db: D1Database, tokenHash: string): Promise<void> {
@@ -267,6 +307,18 @@ export async function createConnection(
 
 export async function listConnections(db: D1Database, accountId: string): Promise<Connection[]> {
 	const rows = await all<RawConnection>(db, 'SELECT * FROM connections WHERE account_id = ? ORDER BY created_at ASC', [accountId]);
+	return rows.map(mapConnection);
+}
+
+export async function listConnectionsByIds(db: D1Database, accountId: string, connectionIds: string[]): Promise<Connection[]> {
+	const rows: Array<RawConnection & { row_order: number }> = [];
+	const uniqueIds = [...new Set(connectionIds)];
+	for (let offset = 0; offset < uniqueIds.length; offset += 4) {
+		const ids = uniqueIds.slice(offset, offset + 4);
+		const sql = ids.map(() => 'SELECT *, rowid AS row_order FROM connections WHERE id = ? AND account_id = ?').join(' UNION ALL ');
+		rows.push(...await all<RawConnection & { row_order: number }>(db, sql, ids.flatMap((id) => [id, accountId])));
+	}
+	rows.sort((a, b) => a.created_at - b.created_at || a.row_order - b.row_order);
 	return rows.map(mapConnection);
 }
 
@@ -400,13 +452,17 @@ export async function listResources(db: D1Database, connectionId: string): Promi
 }
 
 export async function listResourcesForConnections(db: D1Database, connectionIds: string[]): Promise<ConnectionResource[]> {
-	if (connectionIds.length === 0) return [];
-	const placeholders = connectionIds.map(() => '?').join(', ');
-	const rows = await all<RawResource>(
-		db,
-		`SELECT * FROM connection_resources WHERE connection_id IN (${placeholders}) ORDER BY resource_key ASC`,
-		connectionIds,
-	);
+	const rows: RawResource[] = [];
+	const uniqueIds = [...new Set(connectionIds)];
+	// D1 limits compound SELECTs to four terms. Individual indexed lookups also
+	// avoid the extra rows read by multi-id IN queries on D1.
+	for (let offset = 0; offset < uniqueIds.length; offset += 4) {
+		const ids = uniqueIds.slice(offset, offset + 4);
+		const sql = ids.map(() =>
+			'SELECT * FROM (SELECT * FROM connection_resources WHERE connection_id = ? ORDER BY resource_key ASC)',
+		).join(' UNION ALL ');
+		rows.push(...await all<RawResource>(db, sql, ids));
+	}
 	return rows.map(mapResource);
 }
 
@@ -485,14 +541,42 @@ export async function getApiKeyByTokenHash(db: D1Database, tokenHash: string): P
 	return row ? mapApiKey(row) : null;
 }
 
-/** Keys that can still authenticate: revocation deletes, so only expiry can kill one in place. */
-export async function listActiveApiKeys(db: D1Database, accountId: string): Promise<ApiKey[]> {
-	const rows = await all<RawApiKey>(
+export async function getApiKeyIdentityByTokenHash(
+	db: D1Database,
+	tokenHash: string,
+): Promise<{ key: ApiKey; account: Account | null } | null> {
+	const row = await first<RawApiKey & JoinedAccount>(
 		db,
-		'SELECT * FROM api_keys WHERE account_id = ? AND (expires_at IS NULL OR expires_at > ?) ORDER BY created_at DESC',
-		[accountId, Date.now()],
+		`SELECT k.*, ${joinedAccountColumns} FROM api_keys k
+		 LEFT JOIN accounts a ON a.id = k.account_id WHERE k.token_hash = ?`,
+		[tokenHash],
 	);
-	return rows.map(mapApiKey);
+	return row ? { key: mapApiKey(row), account: mapJoinedAccount(row) } : null;
+}
+
+/** Keys that can still authenticate: revocation deletes, so only expiry can kill one in place. */
+export async function listActiveKeyIdsForNotice(
+	db: D1Database,
+	accountId: string,
+	target: { kind: 'account' } | { kind: 'key'; keyId: string } | { kind: 'connection'; connectionId: string; resourceKey?: string | null },
+): Promise<string[]> {
+	const now = Date.now();
+	let sql = 'SELECT k.id FROM api_keys k WHERE k.account_id = ? AND (k.expires_at IS NULL OR k.expires_at > ?)';
+	const params: Param[] = [accountId, now];
+	if (target.kind === 'key') {
+		sql += ' AND k.id = ?';
+		params.push(target.keyId);
+	} else if (target.kind === 'connection') {
+		sql += ' AND EXISTS (SELECT 1 FROM api_key_grants g WHERE g.key_id = k.id AND g.connection_id = ?';
+		params.push(target.connectionId);
+		if (target.resourceKey !== null && target.resourceKey !== undefined) {
+			sql += " AND (g.resource_key = ? OR g.resource_key = '*')";
+			params.push(target.resourceKey);
+		}
+		sql += ')';
+	}
+	const rows = await all<{ id: string }>(db, sql, params);
+	return rows.map((row) => row.id);
 }
 
 export async function updateApiKey(
@@ -562,14 +646,15 @@ export async function listGrantsForKeyConnection(db: D1Database, keyId: string, 
 	return rows.map(mapGrant);
 }
 
-export async function listGrantsForAccount(db: D1Database, accountId: string): Promise<Array<ApiKeyGrant & { keyName: string }>> {
-	const rows = await all<RawGrant & { key_name: string }>(
-		db,			`SELECT g.*, k.name AS key_name FROM api_key_grants g
-			 JOIN api_keys k ON k.id = g.key_id
-			 WHERE k.account_id = ?`,
-			[accountId],
-	);
-	return rows.map((row) => ({ ...mapGrant(row), keyName: row.key_name }));
+export async function listGrantsForKeys(db: D1Database, keyIds: string[]): Promise<ApiKeyGrant[]> {
+	const rows: RawGrant[] = [];
+	const uniqueIds = [...new Set(keyIds)];
+	for (let offset = 0; offset < uniqueIds.length; offset += 4) {
+		const ids = uniqueIds.slice(offset, offset + 4);
+		const sql = ids.map(() => 'SELECT * FROM api_key_grants WHERE key_id = ?').join(' UNION ALL ');
+		rows.push(...await all<RawGrant>(db, sql, ids));
+	}
+	return rows.map(mapGrant);
 }
 
 // -- agent notices -----------------------------------------------------------

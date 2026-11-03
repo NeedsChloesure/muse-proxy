@@ -27,8 +27,14 @@ connectionRoutes.use('*', requireSession, requireSameOrigin);
 connectionRoutes.get('/', async (c) => {
 	const accountId = c.get('session').account.id;
 	const connections = await repo.listConnections(c.env.DB, accountId);
-	const views = [];
-	for (const connection of connections) views.push(await view(c.env, connection));
+	const resources = await repo.listResourcesForConnections(c.env.DB, connections.map((connection) => connection.id));
+	const byConnection = new Map<string, ConnectionResource[]>();
+	for (const resource of resources) {
+		const entries = byConnection.get(resource.connectionId) ?? [];
+		entries.push(resource);
+		byConnection.set(resource.connectionId, entries);
+	}
+	const views = connections.map((connection) => connectionView(connection, byConnection.get(connection.id) ?? []));
 	return json({ ok: true, data: { connections: views } });
 });
 
@@ -448,7 +454,10 @@ interface ConnectionView {
 
 /** Serialise a connection for the frontend. The secret is never included. */
 export async function view(env: Env, connection: Connection): Promise<ConnectionView> {
-	const resources = await repo.listResources(env.DB, connection.id);
+	return connectionView(connection, await repo.listResources(env.DB, connection.id));
+}
+
+function connectionView(connection: Connection, resources: ConnectionResource[]): ConnectionView {
 	return {
 		id: connection.id,
 		provider: connection.provider,

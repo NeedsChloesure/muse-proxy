@@ -17,9 +17,8 @@
 import {
 	createAgentNotice,
 	getSetting,
-	listActiveApiKeys,
+	listActiveKeyIdsForNotice,
 	listAccounts,
-	listGrantsForAccount,
 	setSetting,
 } from '../db/repo';
 import { API_VERSION, type NoticeSeverity } from '../types';
@@ -50,41 +49,10 @@ interface NoticeContent {
 	metaJson: string;
 }
 
-/** The keys a notice is addressed to, resolved against live keys only. */
-async function keysForTarget(db: D1Database, input: EmitNoticeInput, target: NoticeTarget): Promise<string[]> {
-	const keys = await listActiveApiKeys(db, input.accountId);
-	const activeKeyIds = new Set(keys.map((key) => key.id));
-	if (target.kind === 'key') return activeKeyIds.has(target.keyId) ? [target.keyId] : [];
-	if (target.kind === 'account') return keys.map((key) => key.id);
-
-	// Connection targeting: every live key holding any grant on the connection,
-	// with a resource_key narrowing the match to that collection or a wildcard.
-	const grants = await listGrantsForAccount(db, input.accountId);
-	const holders = new Set(
-		grants
-			.filter((grant) => grant.connectionId === target.connectionId && activeKeyIds.has(grant.keyId))
-			.map((grant) => grant.keyId),
-	);
-	if (target.resourceKey === null || target.resourceKey === undefined) return [...holders];
-
-	const exact = new Set(
-		grants
-			.filter(
-				(grant) =>
-					grant.connectionId === target.connectionId &&
-					activeKeyIds.has(grant.keyId) &&
-					(grant.resourceKey === target.resourceKey || grant.resourceKey === '*'),
-			)
-			.map((grant) => grant.keyId),
-	);
-	return [...exact];
-}
-
 /**
  * Record a notice and deliver it to the affected keys.
  *
- * Delivery is computed in memory from the grants as they are at this instant,
- * which keeps the affected set consistent with what the key may reach now.
+ * Delivery is computed from live grants and active keys at emit time.
  */
 export async function emitNotice(db: D1Database, input: EmitNoticeInput, target: NoticeTarget): Promise<void> {
 	const now = Date.now();
@@ -98,7 +66,7 @@ export async function emitNotice(db: D1Database, input: EmitNoticeInput, target:
 		metaJson: JSON.stringify(input.meta ?? {}),
 	};
 
-	const keyIds = await keysForTarget(db, input, target);
+	const keyIds = await listActiveKeyIdsForNotice(db, input.accountId, target);
 	for (const keyId of keyIds) {
 		await createAgentNotice(db, { id: crypto.randomUUID(), keyId, ...content, now });
 	}
@@ -122,8 +90,6 @@ export async function maybeEmitApiVersionNotice(env: Env): Promise<void> {
 
 		const accounts = await listAccounts(env.DB);
 		for (const account of accounts) {
-			const keys = await listActiveApiKeys(env.DB, account.id);
-			if (keys.length === 0) continue;
 			await emitNotice(
 				env.DB,
 				{

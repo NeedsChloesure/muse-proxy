@@ -11,7 +11,7 @@
 import type { Context, MiddlewareHandler } from 'hono';
 
 import { configFrom } from '../config';
-import { getAccountById, getApiKeyByTokenHash, getSessionByTokenHash } from '../db/repo';
+import { getApiKeyIdentityByTokenHash, getSessionIdentityByTokenHash } from '../db/repo';
 import { HttpError, json, problem } from '../lib/http';
 import { parseCookies, SESSION_COOKIE } from '../lib/session';
 import { sha256Hex } from '../lib/crypto';
@@ -44,13 +44,13 @@ export const requireSession: MiddlewareHandler<AppBindings> = async (c, next) =>
 	const token = parseCookies(c.req.header('cookie') ?? null)[SESSION_COOKIE];
 	if (!token) throw new HttpError(401, 'unauthenticated', 'Sign in to continue.');
 
-	const session = await getSessionByTokenHash(c.env.DB, await sha256Hex(token));
-	if (!session) throw new HttpError(401, 'unauthenticated', 'Session is no longer valid.');
+	const identity = await getSessionIdentityByTokenHash(c.env.DB, await sha256Hex(token));
+	if (!identity) throw new HttpError(401, 'unauthenticated', 'Session is no longer valid.');
 
+	const { session, account } = identity;
 	const now = Date.now();
 	if (session.expiresAt <= now) throw new HttpError(401, 'unauthenticated', 'Session has expired.');
 
-	const account = await getAccountById(c.env.DB, session.accountId);
 	if (!account) throw new HttpError(401, 'unauthenticated', 'Account no longer exists.');
 	if (account.disabledAt !== null) throw new HttpError(403, 'account_disabled', 'This account is disabled.');
 
@@ -75,14 +75,14 @@ export async function resolveAgentIdentity(env: Env, request: Request): Promise<
 		throw new HttpError(401, 'unauthenticated', 'Provide an API key as `Authorization: Bearer muse_...`.');
 	}
 
-	const key = await getApiKeyByTokenHash(env.DB, await sha256Hex(token));
+	const identity = await getApiKeyIdentityByTokenHash(env.DB, await sha256Hex(token));
 	// One generic error: distinguishing "no such key" from "expired key" would
 	// help an attacker enumerate tokens.
-	if (!key || !isKeyUsable(key, Date.now())) {
+	if (!identity || !isKeyUsable(identity.key, Date.now())) {
 		throw new HttpError(401, 'invalid_key', 'That API key is not valid.');
 	}
 
-	const account = await getAccountById(env.DB, key.accountId);
+	const { key, account } = identity;
 	if (!account || account.disabledAt !== null) {
 		throw new HttpError(403, 'account_disabled', 'The account owning this key is disabled.');
 	}
